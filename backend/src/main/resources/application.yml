@@ -1,0 +1,89 @@
+# ---------------------------------------------------------------------------
+# Patient Management Service - base configuration.
+#
+# Defaults here are the ones that are safe everywhere. Anything environment
+# specific (data source, CORS origins, seed data) is overridden by a profile,
+# so that the same artefact can be promoted from a laptop to production
+# unchanged.
+# ---------------------------------------------------------------------------
+spring:
+  application:
+    name: patient-service
+
+  profiles:
+    # Local runs get the H2 database and the demo fixtures. Start with
+    # --spring.profiles.active=prod (or SPRING_PROFILES_ACTIVE=prod) to get
+    # neither.
+    default: demo
+
+  datasource:
+    url: jdbc:h2:mem:patientdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    # The schema belongs to Flyway. 'validate' makes the application refuse to
+    # start if the entity mapping and the migrated schema have drifted apart,
+    # which turns a class of silent production bugs into a startup failure.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false   # see README: we map to DTOs inside the transaction
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        # Fail fast on N+1 style lazy loads outside a transaction rather than
+        # silently issuing extra queries.
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  # Jackson 3 (the default in Spring Boot 4) already writes java.time values as
+  # ISO-8601 strings, which is exactly what the Angular client parses natively, so
+  # no serialization overrides are needed here. Nulls are intentionally NOT stripped:
+  # a field that is always present, sometimes null, is a far easier contract for a
+  # typed TypeScript client than a field that disappears.
+
+  threads:
+    virtual:
+      enabled: true   # Java 21+ runtimes get virtual threads; harmless on 17
+
+server:
+  port: 8080
+  error:
+    include-message: never      # errors are produced by GlobalExceptionHandler
+    include-stacktrace: never
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+  api-docs:
+    path: /v3/api-docs
+
+app:
+  cors:
+    # Angular dev server. Empty in prod, where both apps share an origin.
+    allowed-origins: http://localhost:4200
+
+logging:
+  level:
+    com.xtramile.patient: INFO
