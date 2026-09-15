@@ -1,0 +1,40 @@
+.app-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  gap: 0.75rem;
+  background: var(--mat-sys-primary);
+  color: var(--mat-sys-on-primary);
+  box-shadow: var(--mat-sys-level2);
+}
+
+.app-title {
+  font: var(--mat-sys-title-medium);
+  letter-spacing: 0.01em;
+}
+
+.app-spacer {
+  flex: 1 1 auto;
+}
+
+.app-subtitle {
+  font: var(--mat-sys-label-medium);
+  opacity: 0.85;
+}
+
+.app-content {
+  display: block;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+@media (max-width: 599px) {
+  .app-subtitle {
+    display: none;
+  }
+
+  .app-content {
+    padding: 1rem 0.5rem 2rem;
+  }
+}
