@@ -1,0 +1,29 @@
+# Test profile.
+#
+# Two things matter here:
+#  1. Flyway points at db/migration only, so the demo fixtures never leak into a
+#     test. Every test creates exactly the rows it asserts on, which is what makes
+#     the assertions readable and the suite order independent.
+#  2. Hibernate stays on ddl-auto: validate, so the test run also proves that the
+#     entity mapping still matches the migrated schema.
+spring:
+  datasource:
+    url: jdbc:h2:mem:patient-test-${random.uuid};DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+app:
+  cors:
+    allowed-origins: http://localhost:4200
+
+logging:
+  level:
+    org.hibernate.SQL: WARN
