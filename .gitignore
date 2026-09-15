@@ -1,0 +1,32 @@
+# Build output
+target/
+dist/
+out/
+*.jar
+*.war
+
+# Node / Angular
+node_modules/
+.angular/
+*.tsbuildinfo
+
+# Test output
+coverage/
+.nyc_output/
+
+# IDE
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local environment
+*.local
+.env
