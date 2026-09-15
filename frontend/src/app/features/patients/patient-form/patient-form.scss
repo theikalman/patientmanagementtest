@@ -1,0 +1,80 @@
+.form-card {
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.form-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1rem 0.5rem;
+}
+
+.form-title {
+  margin: 0;
+  font: var(--mat-sys-headline-small);
+}
+
+.form-subtitle {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0.2rem 0 0;
+}
+
+.form-pid {
+  font-family: 'Roboto Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.form-meta {
+  font: var(--mat-sys-label-medium);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.form-progress {
+  height: 4px;
+}
+
+.form-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--mat-sys-corner-medium);
+}
+
+.form-banner--error {
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+.form-section {
+  margin: 0 0 1.5rem;
+  padding: 0;
+  border: 0;
+}
+
+.form-legend {
+  padding: 0 0 0.75rem;
+  font: var(--mat-sys-title-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+/* Two columns on a desktop, one on a phone, with no media query needed. */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0 1rem;
+}
+
+.form-grid-wide {
+  grid-column: 1 / -1;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}

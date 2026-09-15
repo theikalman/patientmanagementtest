@@ -1,0 +1,129 @@
+.patients-card {
+  overflow: hidden;
+}
+
+.patients-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1rem 0.75rem;
+}
+
+.patients-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.patients-title {
+  margin: 0;
+  font: var(--mat-sys-headline-small);
+}
+
+.patients-count {
+  font: var(--mat-sys-label-large);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.patients-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.patients-search {
+  min-width: 20rem;
+}
+
+/* Reserve the bar's height so the table does not shift when loading toggles. */
+.patients-progress {
+  height: 4px;
+}
+
+.patients-content {
+  padding: 0;
+}
+
+/* The table is wide; let it scroll horizontally on small screens instead of
+   squeezing the address column into unreadable wrapping. */
+.patients-table-scroll {
+  overflow-x: auto;
+}
+
+.patients-table {
+  width: 100%;
+  min-width: 56rem;
+}
+
+.patients-pid {
+  font-family: 'Roboto Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.patients-age {
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 0.8rem;
+}
+
+.patients-phone {
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.patients-address {
+  max-width: 22rem;
+}
+
+.patients-actions-col {
+  width: 6.5rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.patients-delete {
+  color: var(--mat-sys-error);
+}
+
+.patients-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  color: var(--mat-sys-on-surface-variant);
+  text-align: center;
+
+  mat-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 2.5rem;
+    opacity: 0.6;
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.patients-state--error {
+  color: var(--mat-sys-error);
+}
+
+@media (max-width: 599px) {
+  .patients-search {
+    min-width: 100%;
+  }
+
+  .patients-actions {
+    width: 100%;
+  }
+}
