@@ -81,8 +81,11 @@ springdoc:
 
 app:
   cors:
-    # Angular dev server. Empty in prod, where both apps share an origin.
-    allowed-origins: http://localhost:4200
+    # Comma separated browser origins allowed to call this service.
+    #   :4200 - the Angular dev server
+    #   :8081 - the standalone Swagger UI container from docker-compose.yml
+    # Empty in prod, where both applications share an origin and CORS is off.
+    allowed-origins: http://localhost:4200,http://localhost:8081
 
 logging:
   level:

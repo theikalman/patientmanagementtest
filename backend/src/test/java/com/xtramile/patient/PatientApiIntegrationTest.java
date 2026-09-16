@@ -3,8 +3,10 @@ package com.xtramile.patient;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -35,6 +38,9 @@ import org.springframework.test.web.servlet.MvcResult;
 class PatientApiIntegrationTest {
 
     private static final String BASE = "/api/v1/patients";
+
+    /** Where docker-compose.yml publishes the standalone Swagger UI. */
+    private static final String SWAGGER_UI_ORIGIN = "http://localhost:8081";
 
     private static final String JANE = """
             {
@@ -221,6 +227,56 @@ class PatientApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(4))
                 .andExpect(jsonPath("$[?(@.value == 'MALE')].label").value("Male"));
+    }
+
+    /**
+     * The document the containerised Swagger UI loads. Publishing it is not enough: because that
+     * page is served from another origin, the browser blocks the fetch unless the document is
+     * inside the CORS mapping as well as the API.
+     */
+    @Test
+    @DisplayName("the OpenAPI document is published and readable from the Swagger UI container's origin")
+    void publishesTheOpenApiDocumentCrossOrigin() throws Exception {
+        mockMvc.perform(get("/v3/api-docs").header(HttpHeaders.ORIGIN, SWAGGER_UI_ORIGIN))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, SWAGGER_UI_ORIGIN))
+                .andExpect(jsonPath("$.openapi").exists())
+                .andExpect(jsonPath("$.info.title").value("Patient Management API"))
+                .andExpect(jsonPath("$.paths['/api/v1/patients']").exists());
+    }
+
+    @Test
+    @DisplayName("'Try it out' from the Swagger UI container passes preflight")
+    void allowsPreflightFromSwaggerUi() throws Exception {
+        mockMvc.perform(options(BASE)
+                        .header(HttpHeaders.ORIGIN, SWAGGER_UI_ORIGIN)
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, SWAGGER_UI_ORIGIN));
+    }
+
+    @Test
+    @DisplayName("the Angular dev server is still allowed")
+    void allowsPreflightFromAngularDevServer() throws Exception {
+        mockMvc.perform(options(BASE)
+                        .header(HttpHeaders.ORIGIN, "http://localhost:4200")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "PUT"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:4200"));
+    }
+
+    /** The point of an allow list is what it keeps out, so assert that too. */
+    @Test
+    @DisplayName("an origin that is not on the allow list is refused")
+    void refusesAnUnknownOrigin() throws Exception {
+        mockMvc.perform(options(BASE)
+                        .header(HttpHeaders.ORIGIN, "http://malicious.example.com")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/v3/api-docs").header(HttpHeaders.ORIGIN, "http://malicious.example.com"))
+                .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
     }
 
     // -- helpers -------------------------------------------------------------
