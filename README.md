@@ -1,1238 +1,257 @@
 # Patient Management Application
 
-Answer to **Task #2 (Design and coding test)** of the Xtramile Solutions Java Engineer Test.
+**Task #2 (Design and coding test)** of the Xtramile Solutions Java Engineer Test.
 
-A full stack patient CRUD application: a **Spring Boot 4 / Spring Data JPA / REST** back end
-in Java, an **Angular 21** front end, built with **Maven**, covered by **181 automated tests**
-(135 back end, 46 front end).
+A full stack patient CRUD application with a grid, search, server side pagination and an
+Australian address model.
 
-This README is deliberately long. The task asked for design and coding, so alongside the "how to
-run it" instructions every significant decision is written down with the alternatives that were
-considered and why they were not chosen.
-
----
-
-## Table of contents
-
-1. [What was asked and where it is implemented](#1-what-was-asked-and-where-it-is-implemented)
-2. [Quick start](#2-quick-start)
-3. [Architecture at a glance](#3-architecture-at-a-glance)
-4. [Technology choices](#4-technology-choices)
-5. [Back end design](#5-back-end-design)
-   - [Domain model](#51-domain-model)
-   - [Identity: `id` versus `pid`](#52-identity-id-versus-pid)
-   - [Database schema, constraints and indexes](#53-database-schema-constraints-and-indexes)
-   - [Validation](#54-validation)
-   - [Search and pagination](#55-search-and-pagination)
-   - [Concurrency: preventing lost updates](#56-concurrency-preventing-lost-updates)
-   - [Error handling](#57-error-handling)
-   - [Layering and transactions](#58-layering-and-transactions)
-   - [Configuration and profiles](#59-configuration-and-profiles)
-6. [API documentation and the Swagger UI container](#6-api-documentation-and-the-swagger-ui-container)
-7. [Running the whole stack in Docker](#7-running-the-whole-stack-in-docker)
-8. [REST API reference](#8-rest-api-reference)
-9. [Front end design](#9-front-end-design)
-10. [Testing strategy](#10-testing-strategy)
-11. [Bugs found and fixed while building this](#11-bugs-found-and-fixed-while-building-this)
-12. [Deliberate non-goals and what production would need](#12-deliberate-non-goals-and-what-production-would-need)
-13. [Project layout](#13-project-layout)
-14. [Commands reference](#14-commands-reference)
-
----
-
-## 1. What was asked and where it is implemented
-
-| Requirement from the brief | Status | Where |
-| --- | --- | --- |
-| Spring Boot, Spring JPA, Spring REST API | Done | `backend/src/main/java/com/xtramile/patient` |
-| Back end written in Java | Done | Java 17 |
-| Front end written in Angular | Done | `frontend/src/app` (Angular 21, standalone, signals) |
-| Build with Gradle or Maven | Done | Maven, wrapper committed (`backend/mvnw`) |
-| Unit tests for REST API and Service layers | Done | `PatientControllerTest` (web), `PatientServiceTest` (service), plus repository and full stack tests |
-| Other frameworks or technologies welcome | Done | Flyway, Angular Material, springdoc OpenAPI, Docker Compose (Swagger UI plus a full containerised stack), H2, Vitest |
-| Field: PID (Patient Identity) | Done | `Patient.pid`, server allocated, unique, immutable |
-| Fields: first name, last name | Done | `Patient.firstName` / `lastName` |
-| Field: date of birth | Done | `Patient.dateOfBirth` (`LocalDate`, must be in the past) |
-| Field: gender | Done | `Gender` enum, HL7 aligned |
-| Field: phone no | Done | `Patient.phoneNo`, normalised to E.164 |
-| Australian address: address, suburb, state, postcode | Done | `AustralianAddress` embeddable + `AustralianState` enum |
-| Grid to display the list of patient data | Done | `PatientList` component, Material table |
-| Create new patient data | Done | `POST /api/v1/patients` + `PatientForm` |
-| Update existing patient data | Done | `PUT /api/v1/patients/{id}` + `PatientForm` |
-| Delete existing patient data | Done | `DELETE /api/v1/patients/{id}` + confirmation dialog |
-| Search feature by PID or patient name | Done | `?search=` matched against PID, first name, last name and "first last" |
-| Server side pagination | Done | `?page=&size=&sort=`, paged in the database, `PageResponse` envelope |
-
----
-
-## 2. Quick start
-
-### Prerequisites
-
-| Tool | Version used | Notes |
-| --- | --- | --- |
-| JDK | 17 | Any JDK 17 or newer. `JAVA_HOME` must point at it. |
-| Node.js | 24.11 | Angular 21 needs `^20.19 \|\| ^22.12 \|\| >=24`. |
-| Maven | not required | The Maven wrapper (`./mvnw`) downloads it. |
-| Docker | optional | For the Swagger UI container, and for the whole-stack sanity check (`make stack-up`). |
-| GNU Make | optional | For the `Makefile` shortcuts. macOS ships 3.81, which is what it targets. |
-
-No database to install: the application runs on an in-memory H2 database seeded with 42 demo
-patients.
-
-### The short version
-
-A `Makefile` wraps everything below. `make` on its own lists every target.
-
-```bash
-make dev       # API + web app + Swagger UI from source, Ctrl+C stops the first two
-make test      # both test suites
-make status    # what is currently running
-make stack-up  # the same app built and run entirely in Docker, for a sanity check
-```
-
-The rest of this section spells out the same commands without `make`, since knowing what they
-actually run matters more than the shortcut.
-
-### Run the back end
-
-```bash
-cd backend
-./mvnw spring-boot:run
-```
-
-| URL | What it is |
+| | |
 | --- | --- |
+| **Back end** | Java 17, Spring Boot 4.1, Spring Data JPA, Spring REST, Flyway, H2 |
+| **Front end** | Angular 21 (standalone, signals, zoneless) with Angular Material |
+| **Build** | Maven (wrapper committed), npm |
+| **Tests** | 181 automated tests: 135 back end, 46 front end |
+| **Extras** | springdoc OpenAPI, Docker Compose, Makefile |
+
+Two documents hold the detail, so this one stays readable:
+
+- **[docs/DESIGN.md](docs/DESIGN.md)** - every significant decision, the alternatives considered,
+  and why they were rejected. Also the testing strategy and the bugs found while building this.
+- **[docs/DOCKER.md](docs/DOCKER.md)** - the Swagger UI container and the containerised stack.
+
+---
+
+## 1. Run it
+
+Needs **JDK 17+** and **Node 20.19+** (24 was used here). No database to install: H2 runs in
+memory, seeded with 42 demo patients, and Maven comes from the committed wrapper.
+
+```bash
+make dev
+```
+
+That runs the API and the web app together (Ctrl+C stops both) and starts Swagger UI if Docker is
+available. Then open **http://localhost:4200**.
+
+Without `make`, in two terminals:
+
+```bash
+cd backend  && ./mvnw spring-boot:run     # http://localhost:8080
+cd frontend && npm install && npm start   # http://localhost:4200
+```
+
+| URL | What |
+| --- | --- |
+| http://localhost:4200 | The application |
 | http://localhost:8080/api/v1/patients | The API |
-| http://localhost:8080/swagger-ui.html | Interactive API reference (bundled) |
-| http://localhost:8080/h2-console | Database console (JDBC URL `jdbc:h2:mem:patientdb`, user `sa`, no password) |
-| http://localhost:8080/actuator/health | Health check |
+| http://localhost:8080/swagger-ui.html | Interactive API reference |
+| http://localhost:8080/h2-console | Database console (`jdbc:h2:mem:patientdb`, user `sa`, no password) |
 
-### Run Swagger UI in Docker (optional)
-
-```bash
-docker compose up -d
-```
-
-Open http://localhost:8081. It loads the OpenAPI document from
-`http://localhost:8080/v3/api-docs`, so the back end must already be running.
-`docker compose down` stops it. See
-[section 6](#6-api-documentation-and-the-swagger-ui-container) for why this exists alongside the
-copy of Swagger UI that the service already bundles, and for the CORS rules it needs.
-
-### Run the front end
-
-In a third terminal:
+### Tests
 
 ```bash
-cd frontend
-npm install
-npm start
+make test                         # both suites
+
+# or individually
+cd backend  && ./mvnw test        # 135 tests
+cd frontend && npm run test:ci    #  46 tests
 ```
 
-Open http://localhost:4200. The dev server proxies `/api` to `http://localhost:8080`, so the
-browser only ever sees one origin.
+### Everything in Docker
 
-### Run the tests
+For a sanity check that it builds and runs outside a developer machine:
 
 ```bash
-cd backend  && ./mvnw test     # 135 tests
-cd frontend && npm run test:ci #  46 tests
+make stack-up      # or: docker compose --profile app up -d --build
 ```
+
+Back end as a jar on a JRE, front end as a static bundle on nginx which proxies `/api` to the API
+container, so the browser sees one origin. `make stack-down` removes it. Details in
+[docs/DOCKER.md](docs/DOCKER.md).
 
 ---
 
-## 3. Architecture at a glance
+## 2. Requirements checklist
 
-```
-Browser
-  |
-  |  HTTP, JSON, same origin (dev: Angular dev-server proxies /api)
-  v
-+-------------------------------------------------------------+
-|  Angular 21 (standalone, signals, zoneless)                  |
-|                                                              |
-|  PatientList ----+                                           |
-|  PatientForm ----+--> PatientApi --> HttpClient              |
-|                                        |                     |
-|                                   errorInterceptor           |
-|                                   (-> ApiError)              |
-+-------------------------------------------------------------+
-  |
-  v
-+-------------------------------------------------------------+
-|  Spring Boot 4 / Java 17                                     |
-|                                                              |
-|  PatientController          thin: bind, validate, status     |
-|  GlobalExceptionHandler     every error -> RFC 9457          |
-|         |                                                    |
-|  PatientService             use cases, transactions, rules   |
-|         |                                                    |
-|  PatientRepository          Spring Data JPA                  |
-|  PidGenerator               database sequence                |
-|         |                                                    |
-|  Hibernate 7 -> H2 (schema owned by Flyway)                  |
-+-------------------------------------------------------------+
-```
-
-The dependency direction is strictly downwards. The controller knows the service; the service
-knows the repository; nothing points back up. That is what makes it possible to unit test the
-service without a servlet container and the controller without a database.
-
----
-
-## 4. Technology choices
-
-### Spring Boot 4.1.1 (not 3.x)
-
-Spring Initializr no longer offers a 3.x line, and 4.1.1 is the current release. It brings
-Spring Framework 7, Hibernate 7, Jackson 3 and a restructured starter layout
-(`spring-boot-starter-webmvc` rather than `spring-boot-starter-web`, and per-slice test starters
-such as `spring-boot-starter-webmvc-test`). Everything used here is stable API.
-
-**Trade-off considered:** pinning back to Spring Boot 3.5 would be the more conservative choice
-and is still widely deployed. It was rejected because submitting a project on a superseded major
-version invites the question "why", and nothing in this application needs a 3.x-only feature.
-
-### Maven (not Gradle)
-
-Either was allowed. Maven was chosen because its declarative POM is faster to review than a build
-script, and the Spring Boot parent POM manages the whole dependency matrix. The wrapper is
-committed so the project builds on a machine with no Maven installed.
-
-### Angular 21 (not 22)
-
-Angular 22 requires Node `^22.22.3 || ^24.15.0 || >=26`; the toolchain here runs Node 24.11, which
-is below that floor. Angular 21 accepts `>=24.0.0` and is otherwise the same modern stack:
-standalone components, signals, zoneless change detection, the new control flow syntax, Vitest.
-Upgrading is `ng update` once the Node version moves.
-
-### Angular Material
-
-The brief asks for a *grid*. Material provides a table, a server side paginator, a sort header, a
-datepicker, dialogs and snackbars that are accessible and consistent out of the box. Hand rolling
-those would have spent the time budget on widgets instead of on the application.
-
-### H2 in-memory (not PostgreSQL)
-
-A reviewer must be able to clone the repository and run it. H2 removes the "install a database
-first" step entirely. The code is not tied to it:
-
-- the schema is plain SQL in a Flyway migration;
-- the one dialect specific thing, reading the next value from a sequence, is resolved at startup
-  from the JDBC metadata (`PidGeneratorConfig`), with a PostgreSQL case already written;
-- `application-prod.yml` takes its data source from the environment.
-
-Switching to PostgreSQL is a dependency, a URL and a follow-up migration for the expression
-indexes noted in [5.3](#53-database-schema-constraints-and-indexes).
-
-### Flyway (not `ddl-auto: update`)
-
-Generated DDL is convenient and unusable in production: it cannot express a rename, it gives no
-review point for an index change, and the output differs between Hibernate versions. The schema
-here is hand written in `V1__create_patient_table.sql` and Hibernate runs with
-`ddl-auto: validate`, so the application refuses to start if the entity mapping and the migrated
-schema have drifted apart. That turns a class of silent production bug into a startup failure and
-a failing build.
-
-### No Lombok
-
-Java 17 records cover the DTOs, which is where most of the boilerplate would have been. The entity
-deliberately exposes intention revealing methods (`applyDemographics`) rather than blanket setters,
-which Lombok's `@Data` would have generated and which would have made the "PID never changes"
-invariant unenforceable. Avoiding an annotation processor also removes a class of IDE setup
-problems for whoever opens this next.
-
-### Hand written mapper (not MapStruct or ModelMapper)
-
-With one aggregate the mapping is a few dozen lines that a reviewer can read top to bottom. It is
-plain, unit testable code with no generated sources and no reflection.
-
----
-
-## 5. Back end design
-
-### 5.1 Domain model
-
-```
-Patient  (@Entity, table: patient)
- |
- +-- id            Long              surrogate primary key, database generated
- +-- pid           String            business identity, unique, immutable  "PAT-000042"
- +-- firstName     String
- +-- lastName      String
- +-- dateOfBirth   LocalDate
- +-- gender        Gender            enum: MALE | FEMALE | OTHER | UNKNOWN
- +-- phoneNo       String            E.164, "+61412345678"
- +-- address       AustralianAddress (@Embedded value object)
- |                  +-- street
- |                  +-- suburb
- |                  +-- state       AustralianState enum
- |                  +-- postcode
- +-- version       Long              @Version, optimistic locking
- +-- createdAt     Instant           @CreatedDate
- +-- updatedAt     Instant           @LastModifiedDate
-```
-
-**Why the address is embedded rather than a separate table.** An address here has no identity of
-its own: it is always owned by exactly one patient and is replaced wholesale when it changes.
-Embedding keeps the columns on the `patient` table, so rendering the grid needs no join, while
-Java still gets a cohesive value object with value based `equals`/`hashCode`. If a patient later
-needed several addresses (postal, residential, next of kin) this becomes a `@OneToMany` and the
-value object is reused as the element type.
-
-**Why `Gender` is an enum with those four values.** They are the HL7 FHIR `administrative-gender`
-value set. Healthcare systems interoperate; picking the standard value set now means this service
-can be mapped onto a FHIR or HL7 v2 feed later without a data migration. `UNKNOWN` matters in
-practice: an unconscious admission has a gender, it just is not recorded yet, and that is different
-from `OTHER`.
-
-**Why the entity has no public setters.** `applyDemographics(...)` replaces every client editable
-attribute in one call. A half applied update is therefore impossible, and `pid` simply has no
-mutator, so its immutability is enforced by the type rather than by a convention the next developer
-has to know about.
-
-**Why `equals`/`hashCode` use `pid`, not `id`.** The surrogate key is null until the entity is
-persisted, so an identity based on it changes mid-lifecycle and breaks any `HashSet` the entity was
-put into beforehand. The business key is assigned at construction and never changes.
-
-**Why `age` is derived, not stored.** A stored age is wrong the day after it is written. It is
-computed from `dateOfBirth` against an injected `Clock`, which also makes it assertable in a unit
-test without the test becoming time dependent.
-
-### 5.2 Identity: `id` versus `pid`
-
-Two identifiers exist on purpose.
-
-| | `id` | `pid` |
-| --- | --- | --- |
-| Purpose | Row addressing, joins, URLs | The identity a human uses |
-| Shape | `BIGINT IDENTITY` | `PAT-000042` |
-| Who assigns it | The database | `SequencePidGenerator`, from a dedicated sequence |
-| Mutable | n/a | Never |
-| In the API | `/api/v1/patients/{id}` | `/api/v1/patients/by-pid/{pid}` |
-
-**The PID is allocated by the server, and the create request has no `pid` field at all.** Letting a
-client choose it would mean trusting the client for uniqueness, and would make typos permanent on
-the one field that is supposed to be permanent. The controller test
-`ignoresClientSuppliedPid` asserts that a `pid` smuggled into the request body is ignored.
-
-**Why a database sequence and not the alternatives:**
-
-| Approach | Why not |
+| Requirement from the brief | Where |
 | --- | --- |
-| `MAX(pid) + 1` | Two concurrent creates read the same maximum and collide. |
-| A counter row with `SELECT ... FOR UPDATE` | Correct, but holds a row lock for the length of the transaction and serialises all creates. |
-| UUID | Unique, but cannot be read out over the phone or written on a wristband. |
-| `"PAT-" + id` after insert | Requires a second `UPDATE` and forces the column to be nullable at insert time, which weakens the `NOT NULL` constraint. |
-| **Database sequence** | The database serialises allocation, no lock is held, and the result is short and human readable. |
-
-Sequences are not transactional, so a rolled back create burns a number and the PIDs have gaps.
-That is intentional: gap free numbering would mean serialising every insert, and a PID only has to
-be *unique*, not *contiguous*.
-
-The dialect specific part is isolated. `PidGeneratorConfig` reads the database product name from
-the JDBC metadata at startup and picks Spring's `H2SequenceMaxValueIncrementer` or
-`PostgresSequenceMaxValueIncrementer`. Supporting another engine is one more `case`.
-
-Uniqueness is ultimately guaranteed by `CONSTRAINT uk_patient_pid UNIQUE (pid)`. The sequence keeps
-the happy path collision free; the constraint is what makes it true.
-
-### 5.3 Database schema, constraints and indexes
-
-```sql
-CREATE SEQUENCE patient_pid_seq START WITH 1 INCREMENT BY 1;
-
-CREATE TABLE patient (
-    id            BIGINT       GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    pid           VARCHAR(20)  NOT NULL,
-    first_name    VARCHAR(60)  NOT NULL,
-    last_name     VARCHAR(60)  NOT NULL,
-    date_of_birth DATE         NOT NULL,
-    gender        VARCHAR(10)  NOT NULL,
-    phone_no      VARCHAR(20)  NOT NULL,
-    street        VARCHAR(200) NOT NULL,
-    suburb        VARCHAR(100) NOT NULL,
-    state         VARCHAR(3)   NOT NULL,
-    postcode      VARCHAR(4)   NOT NULL,
-    version       BIGINT       NOT NULL DEFAULT 0,
-    created_at    TIMESTAMP    NOT NULL,
-    updated_at    TIMESTAMP    NOT NULL,
-
-    CONSTRAINT uk_patient_pid      UNIQUE (pid),
-    CONSTRAINT ck_patient_gender   CHECK (gender IN ('MALE','FEMALE','OTHER','UNKNOWN')),
-    CONSTRAINT ck_patient_state    CHECK (state IN ('ACT','NSW','NT','QLD','SA','TAS','VIC','WA')),
-    CONSTRAINT ck_patient_postcode CHECK (LENGTH(postcode) = 4)
-);
-
-CREATE INDEX ix_patient_name ON patient (last_name, first_name);
-CREATE INDEX ix_patient_dob  ON patient (date_of_birth);
-```
-
-**Why the `CHECK` constraints on enum columns.** The enums are stored as strings
-(`@Enumerated(STRING)`) rather than ordinals, because an ordinal silently re-maps every row the day
-somebody inserts a value into the middle of the enum. Strings are readable in the database but
-accept anything, so the `CHECK` puts the value set back under the database's control: a bad row
-cannot be written by a migration, a bulk import or a hand typed `UPDATE`, not just by this
-application.
-
-**Why there is no `CHECK` that the date of birth is in the past.** It would have to reference
-`CURRENT_DATE`, which is not immutable; PostgreSQL rejects such a constraint outright, and where it
-is accepted it is only evaluated at write time anyway. The rule is enforced by `@Past`.
-
-**Indexes.**
-
-- `ix_patient_name (last_name, first_name)` matches the grid's default ordering, so the database
-  can satisfy the `ORDER BY` from the index instead of sorting every page.
-- `ix_patient_dob` supports sorting by date of birth and any future "born between" report.
-- `uk_patient_pid` is both the uniqueness guarantee and the index for `GET /patients/by-pid/{pid}`.
-
-**What is deliberately missing.** Search is a case insensitive `LIKE` with a leading wildcard
-(`%jane%`), which no B-tree index can serve. The natural next step is a lower-cased expression
-index:
-
-```sql
-CREATE INDEX ix_patient_last_name_lower ON patient (LOWER(last_name));
-```
-
-H2 does not support expression indexes, so rather than add DDL that only works on one engine it is
-written up in a comment in the migration and here. On PostgreSQL the full answer is those
-expression indexes for prefix search plus a `pg_trgm` GIN index for the leading wildcard case; at
-a larger scale still, a dedicated search index. At demo volumes the sequential scan is
-irrelevant, and pretending otherwise would be premature optimisation, but the limitation is real
-and is documented rather than hidden.
-
-### 5.4 Validation
-
-Validation lives in three places, each doing a different job.
-
-**1. Bean Validation on the request DTOs** rejects malformed input before any business code runs.
-Messages are written for a human: `"first name is required"`, not `"must not be blank"`.
-
-**2. Two custom constraints** encode the domain rules the brief implies.
-
-`@AustralianPhone` + `PhoneNumbers`. People type the same number many ways:
-`0412 345 678`, `(02) 9876-5432`, `+61 412 345 678`. Storing those verbatim makes exact match
-search and de-duplication impossible, so every number is canonicalised to E.164 on the way in and
-rendered back in local format on the way out:
-
-| Typed | Stored | Displayed |
-| --- | --- | --- |
-| `0412 345 678` | `+61412345678` | `0412 345 678` |
-| `(02) 9876 5432` | `+61298765432` | `(02) 9876 5432` |
-| `+61 412 345 678` | `+61412345678` | `0412 345 678` |
-
-Normalisation is idempotent, which is tested, so re-saving a patient cannot corrupt the number.
-
-`@PostcodeMatchesState`. A `\d{4}` pattern cannot catch the single most common error on an
-Australian address form: picking the wrong state from the dropdown. Each `AustralianState` carries
-its Australia Post postcode ranges, and the class level constraint checks the postcode against
-them:
-
-| State | Ranges |
-| --- | --- |
-| ACT | 0200-0299, 2600-2618, 2900-2920 |
-| NSW | 1000-1999, 2000-2599, 2619-2899, 2921-2999 |
-| NT | 0800-0899, 0900-0999 |
-| QLD | 4000-4999, 9000-9999 |
-| SA | 5000-5799, 5800-5999 |
-| TAS | 7000-7799, 7800-7999 |
-| VIC | 3000-3999, 8000-8999 |
-| WA | 6000-6797, 6800-6999 |
-
-Keeping the ranges on the enum rather than in a validator `switch` means the reference data lives
-in one place and the validator stays trivial. A test asserts that no two states claim the same
-postcode, which is the kind of mistake that is easy to make and invisible afterwards.
-
-The violation is reported against the `postcode` property, not the object, so the Angular form can
-highlight the exact input:
-
-```json
-{ "field": "address.postcode",
-  "message": "postcode 2000 is not allocated to VIC (valid ranges: [3000-3999, 8000-8999])" }
-```
-
-Each constraint also stays in its lane: a postcode that is not four digits is left to `@Pattern`
-rather than being reported twice, because showing a user two errors for one mistake is worse than
-showing one.
-
-**3. Database constraints** are the last line. Everything above can be bypassed by a bulk import or
-a hand written `UPDATE`; `NOT NULL`, `UNIQUE` and `CHECK` cannot.
-
-### 5.5 Search and pagination
-
-**Search.** One `search` parameter is matched, case insensitively, against PID, first name, last
-name, and the concatenation `"first last"`. The brief asks for "PID or patient name", and a user
-who types `jane citizen` expects a hit even though no single column contains that string:
-
-```sql
-WHERE LOWER(p.pid)       LIKE :term
-   OR LOWER(p.firstName) LIKE :term
-   OR LOWER(p.lastName)  LIKE :term
-   OR LOWER(CONCAT(p.firstName, ' ', p.lastName)) LIKE :term
-```
-
-Written as explicit JPQL rather than a derived method name, because the derived equivalent
-(`findByPidContainingIgnoreCaseOrFirstNameContainingIgnoreCase...`) is unreadable and still cannot
-express the full name match.
-
-The term is lower-cased and wrapped in wildcards in the service, in one place, and **LIKE
-metacharacters are escaped** so that a user searching for `50%` does not match every row.
-
-**Pagination happens in the database.** `Pageable` goes into the repository and Spring Data issues
-`LIMIT`/`OFFSET` plus a separate `COUNT`. The application never loads the table and slices it.
-
-Two guard rails sit in front of it:
-
-- **Page size is capped at 100.** Without the cap, `?size=1000000` is a denial of service made of
-  one query string.
-- **Sort properties are restricted to an allow list**: `pid`, `firstName`, `lastName`,
-  `dateOfBirth`, `gender`, `createdAt`, `updatedAt`. Anything else is a `400` with the list of what
-  *is* allowed. Without the allow list an unknown property reaches Hibernate and surfaces as an
-  opaque `500`, and every mapped property silently becomes part of the public API.
-
-When no sort is requested a deterministic default (`lastName, firstName`) is applied, because an
-unordered paginated query can return the same row on two different pages.
-
-**The response envelope is our own type,** not Spring Data's `Page`:
-
-```json
-{ "content": [ ... ], "page": 0, "size": 10, "totalElements": 42,
-  "totalPages": 5, "first": true, "last": false }
-```
-
-`PageImpl` serialises to an implementation defined shape that Spring Boot itself warns about, and
-it is not part of Spring Data's public contract. Declaring `PageResponse` gives the Angular client
-a contract that will not move underneath it on the next upgrade.
-
-### 5.6 Concurrency: preventing lost updates
-
-Two users open the same patient. One corrects the phone number, the other corrects the address.
-Both save. With a naive implementation the second write silently discards the first: the
-**lost update** problem.
-
-The patient carries a JPA `@Version` column, the API returns it on every read, and `PUT` **requires**
-the client to send back the version it last read. The service compares before writing:
-
-```
-GET  /api/v1/patients/44        -> { ..., "version": 0 }
-PUT  /api/v1/patients/44  { ..., "version": 0 }   -> 200, version becomes 1
-PUT  /api/v1/patients/44  { ..., "version": 0 }   -> 409 Conflict
-```
-
-```json
-{ "status": 409, "title": "Concurrent modification",
-  "detail": "Patient 44 has been modified by another user: you are editing version 0 but the
-             current version is 1. Reload the patient and re-apply your changes.",
-  "expectedVersion": 0, "actualVersion": 1 }
-```
-
-The check is made explicitly in the service **and** by the `@Version` column. That is not
-redundant:
-
-- the explicit comparison produces a clear 409 naming both versions, which is what the UI shows;
-- the column closes the narrow race between that read and the flush, when another transaction
-  commits in between. `saveAndFlush` forces the `UPDATE` to happen inside the service method so
-  that `OptimisticLockingFailureException` is translated by our handler instead of escaping during
-  a post-commit flush.
-
-`version` is `@NotNull` on the update DTO, so a client cannot opt out of concurrency checking by
-omitting it.
-
-**Why `version` in the body rather than an `ETag`/`If-Match` header.** `If-Match` is the more
-RESTful spelling of the same idea. The version is carried in the representation instead because it
-is simpler for a typed client to round trip a field it already has than to read a header, and
-because it keeps the contract visible in the OpenAPI schema. The trade-off is noted; either is
-defensible.
-
-### 5.7 Error handling
-
-Every error the API can produce is defined in one `@RestControllerAdvice` and returned as an
-RFC 9457 problem document (`application/problem+json`).
-
-| Situation | Status | `title` |
-| --- | --- | --- |
-| Patient id or PID does not exist | 404 | Patient not found |
-| Bean Validation failure | 400 | Validation failed (plus an `errors` array) |
-| Unparseable body, bad enum, bad date | 400 | Malformed request body |
-| Path or query parameter of the wrong type | 400 | Invalid parameter |
-| Sort property not on the allow list | 400 | Invalid sort |
-| Version mismatch, or optimistic lock failure | 409 | Concurrent modification |
-| Unique or not-null violation | 409 | Data conflict |
-| Anything else | 500 | Internal server error |
-
-Validation failures carry a per field array, sorted by field name so the response is deterministic:
-
-```json
-{ "status": 400, "title": "Validation failed",
-  "detail": "The request contains 4 invalid field(s). See 'errors' for details.",
-  "errors": [
-    { "field": "address.postcode", "message": "postcode 2000 is not allocated to VIC (valid ranges: [3000-3999, 8000-8999])", "rejectedValue": "2000" },
-    { "field": "dateOfBirth",      "message": "date of birth must be in the past", "rejectedValue": "2099-01-01" },
-    { "field": "firstName",        "message": "first name is required", "rejectedValue": "" },
-    { "field": "phoneNo",          "message": "must be a valid Australian phone number, for example 0412 345 678 or (02) 9876 5432", "rejectedValue": "12345" }
-  ] }
-```
-
-A UI that can only say "validation failed" forces the user to guess which box is wrong. This shape
-is what lets the Angular form put each message under the control that caused it.
-
-Three things this buys, all of them tested:
-
-1. **Nothing internal leaks.** The catch-all logs the exception in full for operators and returns a
-   generic message; `server.error.include-stacktrace: never` and `include-message: never` close the
-   default Spring error page as a second route. A test asserts that an
-   `IllegalStateException("connection pool exhausted at com.zaxxer")` does not put `zaxxer` in the
-   response body.
-2. **Controllers and services throw meaningful domain exceptions** instead of assembling
-   `ResponseEntity` objects, so the business code reads as business code.
-3. **The client has one error shape to handle.**
-
-### 5.8 Layering and transactions
-
-`PatientController` binds and validates the request, calls exactly one service method, and chooses
-a status code. It contains no business logic, which is what makes the service testable without a
-servlet container.
-
-`PatientService` holds the use cases. Anything a second delivery mechanism would otherwise have to
-repeat (a batch importer, an HL7 feed, a message listener) lives here: PID allocation, phone
-normalisation, trimming, the version check, the paging guard rails.
-
-The service is annotated `@Transactional(readOnly = true)` at class level, and individual write
-operations opt into a read/write transaction. An accidental write from a query path therefore fails
-loudly instead of silently committing, and read paths give the driver and the database the hint
-that no write is coming.
-
-`spring.jpa.open-in-view` is **disabled**. The default (`true`) keeps a database connection open
-for the whole request so that lazy associations still resolve while the view renders. That hides
-N+1 queries, holds connections far longer than necessary, and makes the transaction boundary
-invisible. Here entities are mapped to DTOs inside the service transaction, so nothing lazy escapes
-it.
-
-### 5.9 Configuration and profiles
-
-| Profile | Purpose |
-| --- | --- |
-| `demo` (default) | H2 in memory, 42 seed patients, H2 console, Swagger UI, SQL logging |
-| `test` | H2 in memory, **no** seed data, used by the automated tests |
-| `prod` | Data source from the environment, no seed data, no H2 console, no Swagger UI |
-
-**Seed data is a separate Flyway location.** `db/migration` holds the schema; `db/seed` holds the
-fixtures, and only the `demo` profile adds it to `spring.flyway.locations`. Tests therefore never
-depend on demo rows, and a production deployment gets the schema without them. A test asserts that
-no `V900` fixture migration was applied under the `test` profile.
-
-The fixtures are realistic on purpose: every seeded phone number is a valid Australian number and
-every postcode belongs to the state next to it, so the demo data would survive the same validation
-the API applies to user input.
-
-`application-prod.yml` is committed even though the assessment only ever runs `demo`, because the
-intended deployment posture is part of the design: secrets from the environment, no console, no
-interactive docs, CORS empty because both applications share an origin.
+| Spring Boot, Spring JPA, Spring REST API | `backend/src/main/java/com/xtramile/patient` |
+| Back end in Java | Java 17 |
+| Front end in Angular | `frontend/src/app`, Angular 21 |
+| Build with Gradle or Maven | Maven, wrapper committed |
+| Unit tests for REST API and Service layers | `PatientControllerTest`, `PatientServiceTest`, plus repository and full stack suites |
+| Other technologies welcome | Flyway, Angular Material, springdoc OpenAPI, Docker Compose, H2, Vitest |
+| Field: PID | `Patient.pid`, server allocated, unique, immutable |
+| Fields: first name, last name | `Patient.firstName` / `lastName` |
+| Field: date of birth | `LocalDate`, must be in the past |
+| Field: gender | `Gender` enum, aligned to HL7 FHIR |
+| Field: phone no | `Patient.phoneNo`, normalised to E.164 |
+| Australian address | `AustralianAddress` embeddable + `AustralianState` enum |
+| Grid of patient data | `PatientList`, Material table |
+| Create / update / delete | `POST` / `PUT` / `DELETE /api/v1/patients`, with `PatientForm` and a confirm dialog |
+| Search by PID or name | `?search=` across PID, first name, last name and "first last" |
+| Server side pagination | `?page=&size=&sort=`, paged in the database |
 
 ---
 
-## 6. API documentation and the Swagger UI container
-
-The service publishes an OpenAPI 3.1 document at `/v3/api-docs`, generated by springdoc from the
-controllers and DTOs. There are two ways to browse it, and they exist for different reasons.
-
-| | Bundled | Containerised |
-| --- | --- | --- |
-| URL | http://localhost:8080/swagger-ui.html | http://localhost:8081 |
-| Served by | The Spring Boot service itself (springdoc) | `swaggerapi/swagger-ui` via `docker-compose.yml` |
-| Needs Docker | No | Yes |
-| Needs CORS | No, same origin | Yes, see below |
-| Disabled in prod | Yes | n/a, it is a local tool |
-
-The bundled UI is the zero-setup option. The container is useful when you want the documentation
-independent of the service: it stays open across restarts and redeploys of the back end, it can be
-pointed at a different environment by changing one environment variable, and it lets the API be
-browsed by someone who is not running the Java application at all.
-
-### Running it
-
-```bash
-docker compose up -d      # then open http://localhost:8081
-docker compose logs -f    # follow the container
-docker compose down       # stop and remove it
-```
-
-The back end must be running separately (`cd backend && ./mvnw spring-boot:run`).
-
-### The back end is in compose too, behind a profile
-
-`docker-compose.yml` also builds and runs the application itself, but only under the `app` profile,
-so it stays out of the way of the day-to-day command. That is a sanity-check stack rather than a
-development loop, and it is described in
-[section 7](#7-running-the-whole-stack-in-docker). Development still runs from source, because a
-container cannot give you restart-on-change or a debugger.
-
-### Two things that are easy to get wrong here
-
-**1. `URL` is fetched by the browser, not by the container.**
-
-```yaml
-URL: http://localhost:8080/v3/api-docs
-```
-
-The image only substitutes this value into a static JavaScript file; the actual request is made by
-the browser that loads the page. So the address has to be one the *browser* can reach, and
-`localhost:8080` is exactly right. The reflex of reaching for `host.docker.internal:8080` produces a
-URL the browser cannot resolve, and the document never loads.
-
-**2. The OpenAPI document needs CORS, not just the API.**
-
-The page is served from `http://localhost:8081` and the document lives on `http://localhost:8080`,
-so the fetch is cross origin. The original CORS configuration mapped only `/api/**`, which is the
-natural thing to write and is not enough: the browser blocks the request for the document before
-any response is read, and Swagger UI reports only "Failed to load API definition" with no cause.
-
-`WebConfig` therefore maps three path patterns:
-
-| Pattern | Methods | Why |
-| --- | --- | --- |
-| `/api/**` | GET, POST, PUT, DELETE, OPTIONS | The API, including "Try it out" calls |
-| `/v3/api-docs` | GET, OPTIONS | The document itself |
-| `/v3/api-docs/**` | GET, OPTIONS | Grouped definitions and `/swagger-config` |
-
-The document path is read from springdoc's own `springdoc.api-docs.path` property rather than being
-typed twice, so the two cannot drift apart. The allowed origins stay a configuration value:
-
-```yaml
-app:
-  cors:
-    allowed-origins: http://localhost:4200,http://localhost:8081
-```
-
-Four tests in `PatientApiIntegrationTest` cover this, including one asserting that an origin which is
-*not* on the list is refused, because the value of an allow list is what it keeps out.
-
-### `@ParameterObject` on `Pageable`
-
-Without it, springdoc documents the list endpoint's `Pageable` as a single opaque `pageable` object.
-Swagger UI then renders a JSON text area instead of inputs and builds a malformed query string
-(`?sort=%5B%22string%22%5D`), which the server rejects with a 400. "Try it out" is unusable on the
-one endpoint most worth trying.
-
-`@ParameterObject` flattens it into the three query parameters that actually exist:
+## 3. Architecture
 
 ```
-GET /api/v1/patients?search=jane&page=0&size=10
+Browser  ->  Angular 21          PatientList / PatientForm
+                |                PatientApi -> HttpClient -> errorInterceptor (-> ApiError)
+                |  /api (same origin: dev-server proxy, or nginx in Docker)
+                v
+             Spring Boot 4       PatientController      thin: bind, validate, status
+                |                GlobalExceptionHandler every error -> RFC 9457
+                |                PatientService         use cases, transactions, rules
+                |                PatientRepository      Spring Data JPA
+                v
+             Hibernate 7 -> H2   schema owned by Flyway
 ```
 
-This was found by clicking Execute in the container rather than by reading the document, which is
-the same argument as [section 11](#11-bugs-found-and-fixed-while-building-this).
+Dependencies point strictly downwards, which is what lets the service be unit tested without a
+servlet container and the controller without a database.
 
 ---
 
-## 7. Running the whole stack in Docker
+## 4. Design decisions at a glance
 
-```bash
-make stack-up        # or: docker compose --profile app up -d --build
-```
+Each row links to the full reasoning and the alternatives that were rejected.
 
-Then open http://localhost:4200. `make stack-down` removes it.
-
-This builds and runs the application the way it would actually be deployed: the back end compiled
-to a jar and run on a JRE, the front end compiled to a static bundle and served by nginx. It is
-meant for a **sanity check** - confirming the thing builds and works outside a developer's machine -
-and not as the day-to-day loop, which stays `make dev` because a container cannot give you
-restart-on-change or a debugger.
-
-### What runs
-
-| Service | Image | Host port | Role |
-| --- | --- | --- | --- |
-| `frontend` | nginx serving the built Angular bundle | 4200 | Serves the app, proxies `/api` to the back end |
-| `backend` | Temurin JRE running the jar | 8080 | The API, demo profile with seeded data |
-| `swagger-ui` | `swaggerapi/swagger-ui` | 8081 | API reference |
-
-```
-            browser
-               |
-               |  http://localhost:4200        one origin, so no CORS
-               v
-      +--------------------+
-      | frontend (nginx)   |
-      |  /        -> SPA   |
-      |  /api/    -> proxy |---------+   internal network, "backend:8080"
-      +--------------------+         |
-                                     v
-                            +--------------------+
-                            | backend (JRE, jar) |
-                            +--------------------+
-                                     ^
-      +--------------------+         |  browser fetches localhost:8080 (CORS)
-      | swagger-ui         |---------+
-      +--------------------+
-```
-
-### Compose profiles keep the two modes apart
-
-`backend` and `frontend` sit behind the `app` profile; `swagger-ui` has no profile. A service
-without a profile always starts, so:
-
-| Command | Starts |
+| Decision | In short |
 | --- | --- |
-| `docker compose up -d` (`make swagger-up`) | Swagger UI only. The day-to-day command, unchanged. |
-| `docker compose --profile app up -d` (`make stack-up`) | All three |
-
-One wrinkle worth knowing: plain `docker compose down` only removes services in the active
-profiles, so it leaves the `app` containers running. `make stack-down` (and `make stop`) use
-`--profile app down`, which clears everything.
-
-The stack deliberately uses the **same host ports** as the development servers, so nothing has to
-be relearned between the two ways of running this. The cost is that they cannot both run at once:
-`make stop` before `make stack-up`.
-
-### Why nginx proxies instead of the browser calling :8080
-
-The front end container could have served static files only and let the browser call
-`http://localhost:8080` directly. Proxying is better for three reasons:
-
-1. **It is the production posture.** The README has described the target deployment as both
-   applications behind a single origin from the start; this stack now actually is that, rather than
-   a different topology wearing the same name.
-2. **No CORS at all** for the front end, which removes a whole class of "works in dev, fails in the
-   container" problems.
-3. **One URL to remember.** `http://localhost:4200` serves the app, the API, and the bundled
-   Swagger UI.
-
-The back end is still published on 8080 so `curl` and the Swagger UI container can reach it
-directly.
-
-### Image choices
-
-| Decision | Why |
-| --- | --- |
-| Multi-stage builds | The runtime images carry no compiler, no Maven, no `node_modules`. Backend 598MB, frontend 94MB. |
-| `maven:3.9-eclipse-temurin-17` to build, not `./mvnw` | The wrapper exists so a host without Maven can build; inside a container we control the toolchain, and using Maven directly skips downloading it. |
-| `eclipse-temurin:17-jre`, not `-jre-alpine` | Temurin publishes Alpine for `linux/amd64` only, so the Alpine tag fails outright on Apple Silicon or an arm64 CI runner. This tag is multi-arch. |
-| `npm ci`, not `npm install` | Installs exactly what the lockfile pins, which is the point of building in a container. |
-| Non-root user in the back end image | If the process is compromised it should not own the filesystem it stands on. |
-| BuildKit cache mounts for `~/.m2` and `~/.npm` | A rebuild is seconds instead of minutes, without baking a package cache into the image. |
-| Healthchecks on every service | `depends_on: condition: service_healthy` means the front end never starts against an API that is still migrating the database. |
-| Tests are not run in the image build | They run in `make test` and CI, where a failure is readable. Baking them in makes the build slow and the output hard to find. |
-
-### Two bugs this stack surfaced
-
-Both are written up in [section 11](#11-bugs-found-and-fixed-while-building-this): a `$host` versus
-`$http_host` mistake in the nginx proxy that broke every write, and a lockfile that could not be
-installed on Linux.
+| [PID separate from the primary key](docs/DESIGN.md#identity-id-versus-pid) | `id` addresses rows; `pid` (`PAT-000042`) is the human identity. Allocated by the server from a database sequence, immutable, `UNIQUE` in the schema. The create request has no `pid` field at all. |
+| [Optimistic locking](docs/DESIGN.md#concurrency-preventing-lost-updates) | `PUT` requires the `version` last read. A concurrent edit gets a 409 naming both versions instead of silently overwriting someone's change. |
+| [Server side pagination](docs/DESIGN.md#search-and-pagination) | Paged in the database, never in memory. Page size capped at 100, sort restricted to an allow list, own `PageResponse` envelope rather than Spring Data's unstable `PageImpl` shape. |
+| [Search](docs/DESIGN.md#search-and-pagination) | One term matched against PID, first name, last name and the concatenated full name. LIKE metacharacters are escaped so `50%` does not match everything. |
+| [RFC 9457 errors](docs/DESIGN.md#error-handling) | Every error defined in one `@RestControllerAdvice`. Validation failures carry a per field `errors` array, which is what lets the Angular form put each message under the right input. Nothing internal leaks. |
+| [Flyway owns the schema](docs/DESIGN.md#flyway-not-ddl-auto-update) | Hand written DDL with explicit constraints and indexes; Hibernate runs `ddl-auto: validate`, so entity/schema drift is a startup failure rather than a silent bug. |
+| [Phone normalisation](docs/DESIGN.md#validation) | `0412 345 678`, `(02) 9876-5432` and `+61 412 345 678` all canonicalise to E.164 on the way in and render locally on the way out, so search and de-duplication compare like with like. |
+| [Postcode validated against its state](docs/DESIGN.md#validation) | A custom constraint checks the postcode against the Australia Post ranges for the selected state, catching the commonest address entry error that `\d{4}` cannot. |
+| [Gender aligned to HL7 FHIR](docs/DESIGN.md#domain-model) | `MALE / FEMALE / OTHER / UNKNOWN`, so this can be mapped onto a clinical interoperability layer later without a data migration. |
+| [Address as a value object](docs/DESIGN.md#domain-model) | `@Embedded`, so the grid needs no join, while Java still gets a cohesive type with value based equality. |
+| [`open-in-view` disabled](docs/DESIGN.md#layering-and-transactions) | Entities are mapped to DTOs inside the service transaction, so N+1 queries cannot hide behind a request-scoped session. |
+| [Reference data from the API](docs/DESIGN.md#front-end-design) | The UI fetches its dropdown values, so the two sides cannot drift when a state or gender is added. |
+| [Grid holds one page](docs/DESIGN.md#front-end-design) | Paging, sorting and searching all flow through a single signal, so they cannot get out of step. Search is debounced into one request per pause. |
+| [Server has the final say on validation](docs/DESIGN.md#front-end-design) | Field violations from the API are projected back onto the matching form controls, so a server-only rule shows up on the right input rather than in a banner. |
+| [No Lombok](docs/DESIGN.md#no-lombok) | Records cover the DTOs; the entity exposes intention revealing methods instead of setters, which is what makes "the PID never changes" enforceable by the type. |
 
 ---
 
-## 8. REST API reference
+## 5. API
 
-Base path `/api/v1`. Interactive documentation at `/swagger-ui.html`, or at http://localhost:8081
-with `docker compose up -d`. The raw document is at `/v3/api-docs`.
+Base path `/api/v1`. Full reference at `/swagger-ui.html`; raw document at `/v3/api-docs`.
 
 | Method | Path | Purpose | Success | Errors |
 | --- | --- | --- | --- | --- |
 | `GET` | `/patients` | List, search, page, sort | 200 | 400 |
-| `GET` | `/patients/{id}` | One patient by surrogate id | 200 | 400, 404 |
+| `GET` | `/patients/{id}` | One patient by id | 200 | 400, 404 |
 | `GET` | `/patients/by-pid/{pid}` | One patient by business PID | 200 | 404 |
-| `POST` | `/patients` | Create; PID allocated by the server | 201 + `Location` | 400 |
+| `POST` | `/patients` | Create; server allocates the PID | 201 + `Location` | 400 |
 | `PUT` | `/patients/{id}` | Replace; requires `version` | 200 | 400, 404, 409 |
 | `DELETE` | `/patients/{id}` | Delete | 204 | 404 |
-| `GET` | `/reference-data/genders` | Dropdown values | 200 | |
-| `GET` | `/reference-data/states` | Dropdown values | 200 | |
+| `GET` | `/reference-data/genders`, `/reference-data/states` | Dropdown values | 200 | |
 
-Query parameters on `GET /patients`:
-
-| Parameter | Default | Notes |
-| --- | --- | --- |
-| `page` | `0` | Zero based |
-| `size` | `10` | Capped at 100 |
-| `sort` | `lastName,asc` | Allow list only; `,asc` or `,desc` |
-| `search` | none | Matched against PID, first name, last name, "first last" |
-
-**The reference data endpoints exist so the UI does not hard code the value sets.** If a state or a
-gender is ever added, the dropdowns pick it up without a front end redeploy, and the two sides
-cannot drift apart.
-
-### Worked examples
+`GET /patients` parameters: `page` (default 0), `size` (default 10, capped at 100),
+`sort` (default `lastName,asc`, allow list only), `search`.
 
 ```bash
-# List, second page of 5, sorted by date of birth descending
-curl 'http://localhost:8080/api/v1/patients?page=1&size=5&sort=dateOfBirth,desc'
+curl 'http://localhost:8080/api/v1/patients?search=jane&page=0&size=5'
 
-# Search by name or PID
-curl 'http://localhost:8080/api/v1/patients?search=jane'
-curl 'http://localhost:8080/api/v1/patients?search=PAT-000012'
+# Create. Note there is no "pid" field; the server allocates it.
+curl -X POST http://localhost:8080/api/v1/patients -H 'Content-Type: application/json' -d '{
+  "firstName":"Jane","lastName":"Citizen","dateOfBirth":"1985-04-12",
+  "gender":"FEMALE","phoneNo":"(02) 9876 5432",
+  "address":{"street":"12 Wallaby Way","suburb":"Sydney","state":"NSW","postcode":"2000"}}'
+```
 
-# Create. Note: no "pid" field; the server allocates it.
-curl -X POST http://localhost:8080/api/v1/patients \
-  -H 'Content-Type: application/json' \
-  -d '{"firstName":"Jane","lastName":"Citizen","dateOfBirth":"1985-04-12",
-       "gender":"FEMALE","phoneNo":"(02) 9876 5432",
-       "address":{"street":"12 Wallaby Way","suburb":"Sydney","state":"NSW","postcode":"2000"}}'
+A validation failure returns a problem document naming each rejected field:
 
-# Update. "version" must be the value last read.
-curl -X PUT http://localhost:8080/api/v1/patients/43 \
-  -H 'Content-Type: application/json' \
-  -d '{"firstName":"Jane","lastName":"Doe","dateOfBirth":"1985-04-12",
-       "gender":"FEMALE","phoneNo":"0412 345 678",
-       "address":{"street":"1 Collins Street","suburb":"Melbourne","state":"VIC","postcode":"3000"},
-       "version":0}'
-
-# Delete
-curl -X DELETE http://localhost:8080/api/v1/patients/43
+```json
+{ "status": 400, "title": "Validation failed",
+  "errors": [
+    { "field": "address.postcode",
+      "message": "postcode 2000 is not allocated to VIC (valid ranges: [3000-3999, 8000-8999])",
+      "rejectedValue": "2000" }
+  ] }
 ```
 
 ---
 
-## 9. Front end design
+## 6. Tests
 
-### Structure
+**181 tests**, each level with a distinct job. Detail in
+[docs/DESIGN.md](docs/DESIGN.md#testing-strategy).
 
-```
-src/app/
-  app.ts / app.config.ts / app.routes.ts   shell, providers, lazy routes
-  core/
-    api/patient-api.ts                     the only place that knows the API URLs
-    models/                                wire types mirroring the server DTOs
-    interceptors/error.interceptor.ts      every HTTP failure -> one ApiError
-    util/dates.ts, au-date-adapter.ts      date handling at the UI boundary
-  features/patients/
-    patient-list/                          the grid
-    patient-form/                          create and edit
-  shared/confirm-dialog/                   reusable confirmation
-```
-
-### Server side everything
-
-The grid holds **one page at a time**. Paging, sorting and searching are query parameters, applied
-by the database, so the grid behaves identically with 42 patients and with 4,000,000. The Material
-paginator is bound to the server's `totalElements`, not to the length of the rendered array, which
-is what a test asserts explicitly.
-
-The table renders from a plain array rather than a `MatTableDataSource`, because the data source
-exists to do client side paging, sorting and filtering, which is exactly what must not happen here.
-
-### One query signal
-
-Search, page, sort and reload all funnel through a single `query` signal, and one `effect` turns a
-change in it into a request. Keeping a single source of truth is what stops the classic grid bug
-where the page index and the filter get out of step and the user sees page 4 of a result set that
-now has one page. Changing the search term or the sort explicitly resets the page to 0 for the same
-reason.
-
-### Debounced search
-
-Typing "jane" would otherwise fire four requests. `debounceTime(300)` plus `distinctUntilChanged()`
-makes the server load proportional to intent rather than to typing speed. Tested with fake timers:
-four keystrokes produce one request.
-
-### The server has the final say on validation
-
-Client side validators mirror the server's rules so obvious mistakes are caught without a round
-trip, but they are a convenience, never the guarantee. When the API rejects a save, each field
-violation is projected back onto the matching form control:
-
-```ts
-const control = this.form.get(violation.field);  // e.g. "address.postcode"
-control.setErrors({ ...control.errors, server: violation.message });
-```
-
-That is what makes a rule that only exists on the server behave like any other field error in the
-UI. Pick VIC with postcode 2000 and the message appears under the postcode input, naming the valid
-ranges, instead of in a banner the user has to translate into "which box do I fix?".
-
-Those server errors are cleared as soon as anything in the form changes, because a server verdict
-describes one specific payload. Without that, correcting the *state* would leave the stale
-rejection sitting on the *postcode*, which reads as if the fix had not worked. (This was a real bug
-found while testing the flow in the browser; see [section 11](#11-bugs-found-and-fixed-while-building-this).)
-
-### Errors
-
-One HTTP interceptor converts every failure into a single `ApiError` type, whether the server sent
-a problem document, an unexpected HTML error page, or nothing at all because it is not running. So
-components write `error: (e: ApiError) => ...` and always have a message that is safe to show. A
-connection refused becomes "Cannot reach the server. Check that the API is running on
-http://localhost:8080" rather than "status 0".
-
-### Angular 21 idioms used
-
-- **Standalone components** throughout; no `NgModule`.
-- **Signals** for component state, with `computed` for derived values.
-- **Zoneless change detection**, the Angular 21 default: updates are driven by signals rather than
-  by zone.js monkey patching.
-- **New control flow** (`@if`, `@for`) rather than `*ngIf` / `*ngFor`.
-- **`inject()`** rather than constructor parameter injection.
-- **`withComponentInputBinding()`**, so the `:id` route parameter arrives as a component input and
-  the form never touches `ActivatedRoute`.
-- **Lazy `loadComponent` routes**, so the initial bundle is the grid only; the form, datepicker and
-  dialog arrive on demand.
-- **No `@angular/animations`**: Angular Material 21 animates with CSS, so the package is not a
-  dependency at all.
-
-### Accessibility and responsiveness
-
-Icon-only buttons carry `aria-label`s naming the patient (`"Delete Jane Citizen"`); the delete
-dialog takes focus and is dismissible with Escape; the progress bar has a reserved height so the
-table does not jump when loading starts; the table scrolls horizontally on a phone rather than
-compressing the address column into unreadable wrapping; the form grid collapses from two columns
-to one with `auto-fit` and no media query. Verified at 375px.
-
----
-
-## 10. Testing strategy
-
-**181 tests.** Each level has a distinct job, and none of them duplicates another.
-
-### Back end, 135 tests
-
-| Suite | Kind | What it proves |
+| Suite | Count | Proves |
 | --- | --- | --- |
-| `PatientServiceTest` (23) | Pure Mockito, no Spring | The business rules: PID comes from the generator not the client, phones are normalised, names trimmed, a stale version writes **nothing**, search terms are escaped, page size is capped, unknown sort properties are rejected |
-| `PatientControllerTest` (24) | `@WebMvcTest` slice | Status codes, JSON shape, request binding, the `Location` header, and that every error becomes the right problem document |
-| `PatientRepositoryTest` (9) | `@DataJpaTest`, real schema | The search JPQL, including the full name match; that paging happens in the database; that `UNIQUE (pid)` is enforced by the database |
-| `PatientApiIntegrationTest` (11) | `@SpringBootTest`, full stack | That the layers are actually wired together: a real create/read/update/delete cycle, sequential PIDs, `@Version` incrementing, real server side paging, the published OpenAPI document, and the CORS rules the Swagger UI container depends on |
-| `PhoneNumbersTest` (27) | Parameterised | 12 input formats normalise to one canonical value, 8 invalid ones are rejected, normalisation is idempotent |
-| `PostcodeMatchesStateValidatorTest` (38) | Real Bean Validation engine | 19 valid and 8 invalid state/postcode pairs, that the violation points at the right field, that no two states claim the same postcode, and that format errors are not double reported |
-| `PatientServiceApplicationTests` (3) | Context | That Flyway ran, that `ddl-auto: validate` agreed with the migrated schema, and that no fixtures leaked into the test profile |
+| `PatientServiceTest` | 23 | Business rules in isolation (Mockito, no Spring): PID allocation, phone normalisation, a stale version writing **nothing**, search escaping, paging guard rails |
+| `PatientControllerTest` | 24 | `@WebMvcTest` slice: status codes, JSON shape, binding, and every error becoming the right problem document |
+| `PatientRepositoryTest` | 9 | `@DataJpaTest` against the real Flyway schema: the search JPQL, database level paging, the `UNIQUE` constraint |
+| `PatientApiIntegrationTest` | 11 | `@SpringBootTest` full stack: a real CRUD cycle, sequential PIDs, `@Version` incrementing, the OpenAPI document and its CORS rules |
+| `PhoneNumbersTest`, `PostcodeMatchesStateValidatorTest`, context | 68 | Parameterised validation rules through the real Bean Validation engine |
+| Front end (6 spec files) | 46 | API contract, error mapping, day-first date parsing, and that the grid really pages server side |
 
-A few choices worth calling out:
-
-- **The mapper is a real instance in the service tests, not a mock.** It is pure, side effect free
-  logic; mocking it would make the tests assert on mock interactions rather than on real output.
-- **The clock is fixed** (`Clock.fixed(...)`), so the assertion `age == 41` cannot start failing on
-  a birthday.
-- **The negative assertions carry the weight.** `rejectsStaleVersion` checks not only that an
-  exception is thrown but that `saveAndFlush` was never called and the entity was not mutated. A
-  test that only checks the exception would pass even if the data had already been corrupted.
-- **`ddl-auto: validate` in the test profile** means every `@SpringBootTest` run is also a check
-  that the entity mapping still matches the migration.
-
-### Front end, 46 tests
-
-| Suite | What it proves |
-| --- | --- |
-| `patient-api.spec` (11) | Method, URL and query parameters for every endpoint; that a blank search term is omitted rather than sent as an empty filter; that the create body has no `pid` |
-| `error.interceptor.spec` (6) | Problem documents, field violations, conflict versions, a non-JSON error body and an unreachable server all collapse into one `ApiError` |
-| `au-date-adapter.spec` (10) | Day first parsing, separator styles, two digit year expansion, and that `31/02` is rejected rather than rolled over to 3 March |
-| `dates.spec` (6) | Round trips that do not drift a day across timezones |
-| `patient-list.spec` (10) | That paging is genuinely server side (the server's total is displayed, the API is called again on a page change), that typing is debounced into one request, that a delete is confirmed first |
-| `app.spec` (3) | The shell renders |
-
-### What is not covered
-
-No end-to-end browser suite (Playwright or Cypress). The flows were instead driven manually in a
-browser during development, which is how the two bugs in the next section were found. For a
-production system the create/edit/delete happy paths belong in an e2e suite running in CI; for a
-timeboxed assessment the layered tests above give better coverage per minute.
+No end-to-end browser suite. The flows were driven manually in a browser instead, which is how
+three of the six [bugs found while building this](docs/DESIGN.md#bugs-found-and-fixed-while-building-this)
+turned up; the other three came from the container build. For production those happy paths belong
+in Playwright in CI.
 
 ---
 
-## 11. Bugs found and fixed while building this
-
-Most of these were found by actually driving the application in a browser rather than by reading
-the code, which is the argument for doing that at least once before calling something done. The
-containerised stack earned its keep the same way: two of the six only appear once the application
-is built and run the way it would be deployed.
-
-**1. Dates typed into the form were recorded as the wrong day.** Angular Material's
-`NativeDateAdapter` *formats* according to `MAT_DATE_LOCALE`, so with `en-AU` it displays
-`dd/mm/yyyy`. But its `parse()` falls back to `Date.parse()`, which reads `12/04/1985` as **4
-December** in the US convention. The field then re-renders as `04/12/1985` and looks plausible, so
-the wrong birthday is stored silently. `AuDateAdapter` overrides `parse()` to read day first, and
-rejects impossible dates such as `31/02/2023` instead of letting the `Date` constructor roll them
-over to 3 March. Ten tests cover it.
-
-**2. A server validation error stuck to the wrong field after the user fixed it.** Submitting
-postcode 2000 with state VIC correctly put the error on the postcode input. Changing the **state**
-to NSW and saving again left the old message visible, as though the correction had not worked,
-because nothing cleared errors that had come from the server. The form now clears them on any
-value change, since a server verdict applies to one specific payload.
-
-**3. Every write failed with 403 in the containerised stack, while every read worked.**
-
-nginx forwarded `Host $host`, which drops the port, so the back end saw `Host: localhost` while the
-browser sent `Origin: http://localhost:4200`. Spring compared the two, concluded they were different
-origins, treated a same-origin write as a CORS request and answered `403 Invalid CORS request`.
-
-The reason only writes broke is the subtle part: browsers attach `Origin` to every `PUT`, `POST` and
-`DELETE`, including same-origin ones, but not to a plain `GET`. So the grid loaded perfectly and
-saving did not, which is a confusing way to fail. The fix is `proxy_set_header Host $http_host`,
-which preserves the port and makes the request genuinely same-origin from the back end's point of
-view.
-
-**4. The lockfile could not be installed on Linux.**
-
-`npm ci` failed inside the build container with `Missing: @emnapi/core from lock file`. The lockfile
-had been generated on macOS and did not carry the optional dependencies that resolve only on Linux.
-Rather than downgrade the Dockerfile to `npm install` and lose reproducibility, the lockfile was
-regenerated inside a Linux container so it carries both platforms' entries. It was then verified
-that `npm ci`, the test suite and the production build all still work on macOS.
-
-A fifth issue was caught by the build rather than the browser: the first version of the migration
-used lower-cased expression indexes, which H2 does not support. Rather than silently dropping them,
-the limitation and the PostgreSQL follow-up are written into the migration and into
-[section 5.3](#53-database-schema-constraints-and-indexes).
-
-And one by the container runtime: `eclipse-temurin:17-jre-alpine` has no `linux/arm64` build, so the
-image failed to resolve on Apple Silicon. The multi-arch `eclipse-temurin:17-jre` is used instead.
-
----
-
-## 12. Deliberate non-goals and what production would need
-
-Things consciously left out, with the reasoning, so their absence is read as a decision rather than
-an oversight.
-
-| Not implemented | Why | What production would do |
-| --- | --- | --- |
-| **Authentication and authorisation** | Not in the brief, and a half implemented auth layer is worse than none. | Spring Security with OAuth2/OIDC; the API is already versioned and stateless, so this is additive. Patient data is sensitive, so this would be the first thing added. |
-| **Audit trail of *who* changed a record** | Requires an authenticated principal, which does not exist yet. | `@CreatedBy` / `@LastModifiedBy` with an `AuditorAware` fed by the security context; Hibernate Envers for full history. The `createdAt` / `updatedAt` half is already in place. |
-| **Soft delete** | The brief says "delete existing patient data", so delete means delete. | Clinical records are rarely hard deleted. A `deleted_at` column plus a default filter, or an archive table, would be the real answer, and it changes the uniqueness story for PID. |
-| **Rate limiting** | Infrastructure concern. | API gateway or Bucket4j. |
-| **Full text search** | Sequential scan is irrelevant at this volume. | Expression indexes and `pg_trgm` on PostgreSQL, then a dedicated search index. Documented in [5.3](#53-database-schema-constraints-and-indexes). |
-| **Caching** | Nothing here is read-heavy enough to justify the invalidation complexity. | Reference data is the obvious first candidate; it changes about never. |
-| **End-to-end browser tests** | Time budget; layered tests give more coverage per minute. | Playwright over the CRUD happy paths in CI. |
-| **A single deployable artefact** | Both applications are containerised (see [section 7](#7-running-the-whole-stack-in-docker)), but as two images behind an nginx proxy rather than one. Two images keep the API independently scalable and the front end cacheable at a CDN. | Either keep the two images and put a real gateway in front, or, if the front end will never be scaled separately, build the Angular bundle into the jar's static resources so one artefact serves both. |
-| **Pushing images to a registry, and orchestration** | Compose is enough to prove the images build and run. Anything beyond that is deployment, not this assessment. | Tag images from CI, push to a registry, and deploy with whatever the platform is. The compose file is a readable statement of what the runtime needs. |
-| **CI pipeline** | Out of scope. | GitHub Actions running both test suites on every push; both are already single commands. |
-
----
-
-## 13. Project layout
+## 7. Layout
 
 ```
 .
-+-- README.md                     this file
-+-- Makefile                      development commands; `make` lists them
-+-- docker-compose.yml            Swagger UI, plus the whole stack under the "app" profile
++-- README.md                  this file
++-- docs/DESIGN.md             design decisions, testing, bugs, non-goals
++-- docs/DOCKER.md             Swagger UI container and the containerised stack
++-- Makefile                   development commands; `make` lists them
++-- docker-compose.yml         Swagger UI, plus the whole stack under the "app" profile
 +-- backend/
-|   +-- Dockerfile                multi-stage: Maven build -> JRE runtime
-|   +-- mvnw, mvnw.cmd, .mvn/     Maven wrapper (no local Maven needed)
-|   +-- pom.xml
+|   +-- Dockerfile             multi-stage: Maven build -> JRE runtime
 |   +-- src/main/java/com/xtramile/patient/
-|   |   +-- PatientServiceApplication.java
-|   |   +-- config/               JPA auditing + Clock, PID incrementer, CORS, OpenAPI
-|   |   +-- domain/               Patient, AustralianAddress, AustralianState, Gender
-|   |   +-- repository/           PatientRepository (Spring Data JPA + search JPQL)
-|   |   +-- service/              PatientService, PidGenerator, domain exceptions
-|   |   +-- validation/           @AustralianPhone, @PostcodeMatchesState, PhoneNumbers
-|   |   +-- web/                  controllers, GlobalExceptionHandler, DTOs, mapper
+|   |   +-- config/            JPA auditing + Clock, PID incrementer, CORS, OpenAPI
+|   |   +-- domain/            Patient, AustralianAddress, AustralianState, Gender
+|   |   +-- repository/        PatientRepository (Spring Data JPA + search JPQL)
+|   |   +-- service/           PatientService, PidGenerator, domain exceptions
+|   |   +-- validation/        @AustralianPhone, @PostcodeMatchesState, PhoneNumbers
+|   |   +-- web/               controllers, GlobalExceptionHandler, DTOs, mapper
 |   +-- src/main/resources/
-|   |   +-- application.yml       base config
-|   |   +-- application-demo.yml  local: seed data, verbose logging
-|   |   +-- application-prod.yml  production shaped config
-|   |   +-- db/migration/         V1 schema, owned by Flyway
-|   |   +-- db/seed/              V900 demo fixtures, demo profile only
-|   +-- src/test/                 135 tests + application-test.yml
+|   |   +-- application{,-demo,-prod}.yml
+|   |   +-- db/migration/      V1 schema, owned by Flyway
+|   |   +-- db/seed/           V900 demo fixtures, demo profile only
+|   +-- src/test/              135 tests
 +-- frontend/
-    +-- Dockerfile                multi-stage: npm build -> nginx runtime
-    +-- nginx.conf                SPA fallback plus the /api proxy
-    +-- package.json, angular.json, proxy.conf.json
+    +-- Dockerfile             multi-stage: npm build -> nginx runtime
+    +-- nginx.conf             SPA fallback plus the /api proxy
     +-- src/app/
-        +-- core/                 API client, models, interceptor, date utilities
-        +-- features/patients/    patient-list (grid), patient-form (create/edit)
-        +-- shared/               confirm dialog
+        +-- core/              API client, models, error interceptor, date utilities
+        +-- features/patients/ patient-list (grid), patient-form (create/edit)
+        +-- shared/            confirm dialog
 ```
 
 ---
 
-## 14. Commands reference
+## 8. Commands
 
-### Makefile
-
-`make` with no arguments prints this list. Every target is a thin wrapper around the underlying
-command, so nothing here is a black box.
+`make` with no arguments prints the full list. Every target is a thin wrapper around the real
+command, so nothing is hidden.
 
 | Target | What it does |
 | --- | --- |
-| `make dev` | Starts Swagger UI, then runs the API and the web app together. Ctrl+C stops both. |
+| `make dev` | API and web app together in one terminal, plus Swagger UI. Ctrl+C stops both servers. |
 | `make api` / `make web` | Run one side only |
-| `make stop` | Stops the API, the web app and the Swagger UI container |
-| `make status` | Probes all three URLs and reports what is up |
-| `make test` | Both test suites |
-| `make test-api` / `make test-web` | One suite |
+| `make test` / `test-api` / `test-web` | Test suites |
 | `make test-one T=PatientServiceTest` | A single back end test class |
-| `make test-watch` | Front end tests in watch mode |
-| `make build` | Jar plus production front end bundle |
-| `make run-jar` | Builds and runs the packaged jar |
-| `make verify` | What CI would run: clean build plus both suites |
-| `make format` / `make format-check` | Prettier, writing or checking |
-| `make stack-up` | Builds and runs the whole app in Docker, for a sanity check |
-| `make stack-down` | Removes every container in the project |
-| `make stack-logs` / `make stack-ps` | Logs and health of the containerised stack |
-| `make stack-rebuild` | Rebuilds the images ignoring the layer cache |
-| `make swagger-up` / `-down` / `-logs` / `-pull` | The Swagger UI container |
-| `make api-docs` | Pretty-prints the OpenAPI document |
-| `make install` | Front end dependencies |
-| `make clean` / `make clean-all` | Build output, and build output plus `node_modules` |
+| `make build` / `make verify` | Build both; or the full clean build plus both suites, as CI would |
+| `make stack-up` / `stack-down` | The containerised stack |
+| `make swagger-up` / `swagger-down` | The Swagger UI container alone |
+| `make status` | Probes all three URLs and reports what is up |
+| `make stop` | Stops every process and container this project starts |
+| `make format` / `format-check` | Prettier |
+| `make clean` / `clean-all` | Build output, and build output plus `node_modules` |
 
-Two details worth knowing:
-
-- **`make dev` runs both servers in one terminal** under `trap 'kill 0' EXIT INT TERM`, so a single
-  Ctrl+C stops the API and the web app together instead of leaving one orphaned. The Swagger UI
-  container is detached and survives, which is usually what you want; `make swagger-down` stops it.
-  If Docker is not running, `make dev` says so and carries on without Swagger UI rather than
-  failing, because the container is a convenience and not a prerequisite.
-- **`make install` only reruns `npm ci` when the lockfile actually changes.** `node_modules` is a
-  real make target depending on `package-lock.json`, so repeated builds skip it.
-
-The file targets GNU Make 3.81, the version macOS ships, so it avoids `.ONESHELL` (3.82 and later)
-and uses backslash continuations where a recipe needs a single shell.
-
-### Back end
-
-```bash
-cd backend
-
-./mvnw spring-boot:run                              # run (demo profile, seeded)
-./mvnw spring-boot:run -Dspring-boot.run.profiles=prod   # needs DB_URL, DB_USERNAME, DB_PASSWORD
-./mvnw test                                         # 135 tests
-./mvnw test -Dtest=PatientServiceTest               # one suite
-./mvnw clean package                                # build the jar
-java -jar target/patient-service-0.0.1-SNAPSHOT.jar # run the jar
-```
-
-### Front end
-
-```bash
-cd frontend
-
-npm install
-npm start          # dev server on :4200, proxying /api to :8080
-npm run build      # production bundle into dist/
-npm run test:ci    # 46 tests, single run
-npm test           # watch mode
-npm run format     # Prettier
-```
-
-### Swagger UI container
-
-```bash
-docker compose up -d          # start, then open http://localhost:8081
-docker compose ps             # status, including the healthcheck
-docker compose logs -f        # follow the logs
-docker compose down           # stop and remove
-docker compose pull           # take a newer Swagger UI image
-```
-
-### Containerised stack
-
-```bash
-docker compose --profile app up -d --build   # build and start everything
-docker compose --profile app ps              # status and health
-docker compose --profile app logs -f backend # one service's logs
-docker compose --profile app down            # remove everything
-docker compose --profile app build --no-cache
-```
-
-Plain `docker compose down` removes only the unprofiled services, so it leaves the app containers
-running. Use the `--profile app` form, or `make stack-down`.
-
-### Handy API calls
-
-```bash
-curl 'http://localhost:8080/api/v1/patients?size=5'
-curl 'http://localhost:8080/api/v1/patients?search=jane'
-curl  http://localhost:8080/api/v1/patients/1
-curl  http://localhost:8080/v3/api-docs        # OpenAPI document
-curl  http://localhost:8080/actuator/health
-```
+Two behaviours worth knowing: `make dev` runs both servers under `trap 'kill 0'`, so one Ctrl+C
+stops them together instead of orphaning one; and `make install` only reruns `npm ci` when the
+lockfile actually changes. The file targets GNU Make 3.81, the version macOS ships.
