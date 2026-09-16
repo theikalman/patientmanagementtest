@@ -108,31 +108,7 @@ servlet container and the controller without a database.
 
 ---
 
-## 4. Design decisions at a glance
-
-The reasoning and the alternatives that were rejected are in comments at each site.
-
-| Decision | In short |
-| --- | --- |
-| **PID separate from the primary key** | `id` addresses rows; `pid` (`PAT-000042`) is the human identity. Allocated by the server from a database sequence, immutable, `UNIQUE` in the schema. The create request has no `pid` field at all. |
-| **Optimistic locking** | `PUT` requires the `version` last read. A concurrent edit gets a 409 naming both versions instead of silently overwriting someone's change. |
-| **Server side pagination** | Paged in the database, never in memory. Page size capped at 100, sort restricted to an allow list, own `PageResponse` envelope rather than Spring Data's unstable `PageImpl` shape. |
-| **Search** | One term matched against PID, first name, last name and the concatenated full name. LIKE metacharacters are escaped so `50%` does not match everything. |
-| **RFC 9457 errors** | Every error defined in one `@RestControllerAdvice`. Validation failures carry a per field `errors` array, which is what lets the Angular form put each message under the right input. Nothing internal leaks. |
-| **Flyway owns the schema** | Hand written DDL with explicit constraints and indexes; Hibernate runs `ddl-auto: validate`, so entity/schema drift is a startup failure rather than a silent bug. |
-| **Phone normalisation** | `0412 345 678`, `(02) 9876-5432` and `+61 412 345 678` all canonicalise to E.164 on the way in and render locally on the way out, so search and de-duplication compare like with like. |
-| **Postcode validated against its state** | A custom constraint checks the postcode against the Australia Post ranges for the selected state, catching the commonest address entry error that `\d{4}` cannot. |
-| **Gender aligned to HL7 FHIR** | `MALE / FEMALE / OTHER / UNKNOWN`, so this can be mapped onto a clinical interoperability layer later without a data migration. |
-| **Address as a value object** | `@Embedded`, so the grid needs no join, while Java still gets a cohesive type with value based equality. |
-| **`open-in-view` disabled** | Entities are mapped to DTOs inside the service transaction, so N+1 queries cannot hide behind a request-scoped session. |
-| **Reference data from the API** | The UI fetches its dropdown values, so the two sides cannot drift when a state or gender is added. |
-| **Grid holds one page** | Paging, sorting and searching all flow through a single signal, so they cannot get out of step. Search is debounced into one request per pause. |
-| **Server has the final say on validation** | Field violations from the API are projected back onto the matching form controls, so a server-only rule shows up on the right input rather than in a banner. |
-| **No Lombok** | Records cover the DTOs; the entity exposes intention revealing methods instead of setters, which is what makes "the PID never changes" enforceable by the type. |
-
----
-
-## 5. API
+## 4. API
 
 Base path `/api/v1`. Full reference at `/swagger-ui.html`; raw document at `/v3/api-docs`.
 
@@ -172,58 +148,7 @@ A validation failure returns a problem document naming each rejected field:
 
 ---
 
-## 6. Tests
-
-**181 tests**, each level with a distinct job and none duplicating another.
-
-| Suite | Count | Proves |
-| --- | --- | --- |
-| `PatientServiceTest` | 23 | Business rules in isolation (Mockito, no Spring): PID allocation, phone normalisation, a stale version writing **nothing**, search escaping, paging guard rails |
-| `PatientControllerTest` | 24 | `@WebMvcTest` slice: status codes, JSON shape, binding, and every error becoming the right problem document |
-| `PatientRepositoryTest` | 9 | `@DataJpaTest` against the real Flyway schema: the search JPQL, database level paging, the `UNIQUE` constraint |
-| `PatientApiIntegrationTest` | 11 | `@SpringBootTest` full stack: a real CRUD cycle, sequential PIDs, `@Version` incrementing, the OpenAPI document and its CORS rules |
-| `PhoneNumbersTest`, `PostcodeMatchesStateValidatorTest`, context | 68 | Parameterised validation rules through the real Bean Validation engine |
-| Front end (6 spec files) | 46 | API contract, error mapping, day-first date parsing, and that the grid really pages server side |
-
-No end-to-end browser suite. The flows were driven manually in a browser instead, which is how
-three of the six bugs found while building this turned up; the other three came from the container
-build. For production those happy paths belong in Playwright in CI.
-
----
-
-## 7. Layout
-
-```
-.
-+-- README.md                  this file
-+-- Makefile                   development commands; `make` lists them
-+-- docker-compose.yml         Swagger UI, plus the whole stack under the "app" profile
-+-- backend/
-|   +-- Dockerfile             multi-stage: Maven build -> JRE runtime
-|   +-- src/main/java/com/xtramile/patient/
-|   |   +-- config/            JPA auditing + Clock, PID incrementer, CORS, OpenAPI
-|   |   +-- domain/            Patient, AustralianAddress, AustralianState, Gender
-|   |   +-- repository/        PatientRepository (Spring Data JPA + search JPQL)
-|   |   +-- service/           PatientService, PidGenerator, domain exceptions
-|   |   +-- validation/        @AustralianPhone, @PostcodeMatchesState, PhoneNumbers
-|   |   +-- web/               controllers, GlobalExceptionHandler, DTOs, mapper
-|   +-- src/main/resources/
-|   |   +-- application{,-demo,-prod}.yml
-|   |   +-- db/migration/      V1 schema, owned by Flyway
-|   |   +-- db/seed/           V900 demo fixtures, demo profile only
-|   +-- src/test/              135 tests
-+-- frontend/
-    +-- Dockerfile             multi-stage: npm build -> nginx runtime
-    +-- nginx.conf             SPA fallback plus the /api proxy
-    +-- src/app/
-        +-- core/              API client, models, error interceptor, date utilities
-        +-- features/patients/ patient-list (grid), patient-form (create/edit)
-        +-- shared/            confirm dialog
-```
-
----
-
-## 8. Commands
+## 5. Commands
 
 `make` with no arguments prints the full list. Every target is a thin wrapper around the real
 command, so nothing is hidden.
