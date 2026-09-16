@@ -29,13 +29,14 @@ considered and why they were not chosen.
    - [Layering and transactions](#58-layering-and-transactions)
    - [Configuration and profiles](#59-configuration-and-profiles)
 6. [API documentation and the Swagger UI container](#6-api-documentation-and-the-swagger-ui-container)
-7. [REST API reference](#7-rest-api-reference)
-8. [Front end design](#8-front-end-design)
-9. [Testing strategy](#9-testing-strategy)
-10. [Bugs found and fixed while building this](#10-bugs-found-and-fixed-while-building-this)
-11. [Deliberate non-goals and what production would need](#11-deliberate-non-goals-and-what-production-would-need)
-12. [Project layout](#12-project-layout)
-13. [Commands reference](#13-commands-reference)
+7. [Running the whole stack in Docker](#7-running-the-whole-stack-in-docker)
+8. [REST API reference](#8-rest-api-reference)
+9. [Front end design](#9-front-end-design)
+10. [Testing strategy](#10-testing-strategy)
+11. [Bugs found and fixed while building this](#11-bugs-found-and-fixed-while-building-this)
+12. [Deliberate non-goals and what production would need](#12-deliberate-non-goals-and-what-production-would-need)
+13. [Project layout](#13-project-layout)
+14. [Commands reference](#14-commands-reference)
 
 ---
 
@@ -48,7 +49,7 @@ considered and why they were not chosen.
 | Front end written in Angular | Done | `frontend/src/app` (Angular 21, standalone, signals) |
 | Build with Gradle or Maven | Done | Maven, wrapper committed (`backend/mvnw`) |
 | Unit tests for REST API and Service layers | Done | `PatientControllerTest` (web), `PatientServiceTest` (service), plus repository and full stack tests |
-| Other frameworks or technologies welcome | Done | Flyway, Angular Material, springdoc OpenAPI, Swagger UI in Docker Compose, H2, Vitest |
+| Other frameworks or technologies welcome | Done | Flyway, Angular Material, springdoc OpenAPI, Docker Compose (Swagger UI plus a full containerised stack), H2, Vitest |
 | Field: PID (Patient Identity) | Done | `Patient.pid`, server allocated, unique, immutable |
 | Fields: first name, last name | Done | `Patient.firstName` / `lastName` |
 | Field: date of birth | Done | `Patient.dateOfBirth` (`LocalDate`, must be in the past) |
@@ -73,7 +74,7 @@ considered and why they were not chosen.
 | JDK | 17 | Any JDK 17 or newer. `JAVA_HOME` must point at it. |
 | Node.js | 24.11 | Angular 21 needs `^20.19 \|\| ^22.12 \|\| >=24`. |
 | Maven | not required | The Maven wrapper (`./mvnw`) downloads it. |
-| Docker | optional | Only for the standalone Swagger UI in `docker-compose.yml`. |
+| Docker | optional | For the Swagger UI container, and for the whole-stack sanity check (`make stack-up`). |
 | GNU Make | optional | For the `Makefile` shortcuts. macOS ships 3.81, which is what it targets. |
 
 No database to install: the application runs on an in-memory H2 database seeded with 42 demo
@@ -84,9 +85,10 @@ patients.
 A `Makefile` wraps everything below. `make` on its own lists every target.
 
 ```bash
-make dev     # API + web app + Swagger UI, Ctrl+C stops the first two
-make test    # both test suites
-make status  # what is currently running
+make dev       # API + web app + Swagger UI from source, Ctrl+C stops the first two
+make test      # both test suites
+make status    # what is currently running
+make stack-up  # the same app built and run entirely in Docker, for a sanity check
 ```
 
 The rest of this section spells out the same commands without `make`, since knowing what they
@@ -658,13 +660,13 @@ docker compose down       # stop and remove it
 
 The back end must be running separately (`cd backend && ./mvnw spring-boot:run`).
 
-### Why the back end is not a compose service
+### The back end is in compose too, behind a profile
 
-It is run from source during development, which gives restart-on-change and a debugger. Putting it
-in a container would mean rebuilding an image on every code change for no benefit. The compose file
-deliberately contains only the tooling that has no source in this repository. Containerising the
-service belongs with the deployment story instead, and is listed as a non-goal in
-[section 11](#11-deliberate-non-goals-and-what-production-would-need).
+`docker-compose.yml` also builds and runs the application itself, but only under the `app` profile,
+so it stays out of the way of the day-to-day command. That is a sanity-check stack rather than a
+development loop, and it is described in
+[section 7](#7-running-the-whole-stack-in-docker). Development still runs from source, because a
+container cannot give you restart-on-change or a debugger.
 
 ### Two things that are easy to get wrong here
 
@@ -720,11 +722,108 @@ GET /api/v1/patients?search=jane&page=0&size=10
 ```
 
 This was found by clicking Execute in the container rather than by reading the document, which is
-the same argument as [section 10](#10-bugs-found-and-fixed-while-building-this).
+the same argument as [section 11](#11-bugs-found-and-fixed-while-building-this).
 
 ---
 
-## 7. REST API reference
+## 7. Running the whole stack in Docker
+
+```bash
+make stack-up        # or: docker compose --profile app up -d --build
+```
+
+Then open http://localhost:4200. `make stack-down` removes it.
+
+This builds and runs the application the way it would actually be deployed: the back end compiled
+to a jar and run on a JRE, the front end compiled to a static bundle and served by nginx. It is
+meant for a **sanity check** - confirming the thing builds and works outside a developer's machine -
+and not as the day-to-day loop, which stays `make dev` because a container cannot give you
+restart-on-change or a debugger.
+
+### What runs
+
+| Service | Image | Host port | Role |
+| --- | --- | --- | --- |
+| `frontend` | nginx serving the built Angular bundle | 4200 | Serves the app, proxies `/api` to the back end |
+| `backend` | Temurin JRE running the jar | 8080 | The API, demo profile with seeded data |
+| `swagger-ui` | `swaggerapi/swagger-ui` | 8081 | API reference |
+
+```
+            browser
+               |
+               |  http://localhost:4200        one origin, so no CORS
+               v
+      +--------------------+
+      | frontend (nginx)   |
+      |  /        -> SPA   |
+      |  /api/    -> proxy |---------+   internal network, "backend:8080"
+      +--------------------+         |
+                                     v
+                            +--------------------+
+                            | backend (JRE, jar) |
+                            +--------------------+
+                                     ^
+      +--------------------+         |  browser fetches localhost:8080 (CORS)
+      | swagger-ui         |---------+
+      +--------------------+
+```
+
+### Compose profiles keep the two modes apart
+
+`backend` and `frontend` sit behind the `app` profile; `swagger-ui` has no profile. A service
+without a profile always starts, so:
+
+| Command | Starts |
+| --- | --- |
+| `docker compose up -d` (`make swagger-up`) | Swagger UI only. The day-to-day command, unchanged. |
+| `docker compose --profile app up -d` (`make stack-up`) | All three |
+
+One wrinkle worth knowing: plain `docker compose down` only removes services in the active
+profiles, so it leaves the `app` containers running. `make stack-down` (and `make stop`) use
+`--profile app down`, which clears everything.
+
+The stack deliberately uses the **same host ports** as the development servers, so nothing has to
+be relearned between the two ways of running this. The cost is that they cannot both run at once:
+`make stop` before `make stack-up`.
+
+### Why nginx proxies instead of the browser calling :8080
+
+The front end container could have served static files only and let the browser call
+`http://localhost:8080` directly. Proxying is better for three reasons:
+
+1. **It is the production posture.** The README has described the target deployment as both
+   applications behind a single origin from the start; this stack now actually is that, rather than
+   a different topology wearing the same name.
+2. **No CORS at all** for the front end, which removes a whole class of "works in dev, fails in the
+   container" problems.
+3. **One URL to remember.** `http://localhost:4200` serves the app, the API, and the bundled
+   Swagger UI.
+
+The back end is still published on 8080 so `curl` and the Swagger UI container can reach it
+directly.
+
+### Image choices
+
+| Decision | Why |
+| --- | --- |
+| Multi-stage builds | The runtime images carry no compiler, no Maven, no `node_modules`. Backend 598MB, frontend 94MB. |
+| `maven:3.9-eclipse-temurin-17` to build, not `./mvnw` | The wrapper exists so a host without Maven can build; inside a container we control the toolchain, and using Maven directly skips downloading it. |
+| `eclipse-temurin:17-jre`, not `-jre-alpine` | Temurin publishes Alpine for `linux/amd64` only, so the Alpine tag fails outright on Apple Silicon or an arm64 CI runner. This tag is multi-arch. |
+| `npm ci`, not `npm install` | Installs exactly what the lockfile pins, which is the point of building in a container. |
+| Non-root user in the back end image | If the process is compromised it should not own the filesystem it stands on. |
+| BuildKit cache mounts for `~/.m2` and `~/.npm` | A rebuild is seconds instead of minutes, without baking a package cache into the image. |
+| Healthchecks on every service | `depends_on: condition: service_healthy` means the front end never starts against an API that is still migrating the database. |
+| Tests are not run in the image build | They run in `make test` and CI, where a failure is readable. Baking them in makes the build slow and the output hard to find. |
+
+### Two bugs this stack surfaced
+
+Both are written up in [section 11](#11-bugs-found-and-fixed-while-building-this): a `$host` versus
+`$http_host` mistake in the nginx proxy that broke every write, and a lockfile that could not be
+installed on Linux.
+
+---
+
+## 8. REST API reference
 
 Base path `/api/v1`. Interactive documentation at `/swagger-ui.html`, or at http://localhost:8081
 with `docker compose up -d`. The raw document is at `/v3/api-docs`.
@@ -784,7 +883,7 @@ curl -X DELETE http://localhost:8080/api/v1/patients/43
 
 ---
 
-## 8. Front end design
+## 9. Front end design
 
 ### Structure
 
@@ -844,7 +943,7 @@ ranges, instead of in a banner the user has to translate into "which box do I fi
 Those server errors are cleared as soon as anything in the form changes, because a server verdict
 describes one specific payload. Without that, correcting the *state* would leave the stale
 rejection sitting on the *postcode*, which reads as if the fix had not worked. (This was a real bug
-found while testing the flow in the browser; see [section 10](#10-bugs-found-and-fixed-while-building-this).)
+found while testing the flow in the browser; see [section 11](#11-bugs-found-and-fixed-while-building-this).)
 
 ### Errors
 
@@ -879,7 +978,7 @@ to one with `auto-fit` and no media query. Verified at 375px.
 
 ---
 
-## 9. Testing strategy
+## 10. Testing strategy
 
 **181 tests.** Each level has a distinct job, and none of them duplicates another.
 
@@ -927,10 +1026,12 @@ timeboxed assessment the layered tests above give better coverage per minute.
 
 ---
 
-## 10. Bugs found and fixed while building this
+## 11. Bugs found and fixed while building this
 
-Both were found by actually driving the application in a browser rather than by reading the code,
-which is the argument for doing that at least once before calling something done.
+Most of these were found by actually driving the application in a browser rather than by reading
+the code, which is the argument for doing that at least once before calling something done. The
+containerised stack earned its keep the same way: two of the six only appear once the application
+is built and run the way it would be deployed.
 
 **1. Dates typed into the form were recorded as the wrong day.** Angular Material's
 `NativeDateAdapter` *formats* according to `MAT_DATE_LOCALE`, so with `en-AU` it displays
@@ -946,14 +1047,37 @@ to NSW and saving again left the old message visible, as though the correction h
 because nothing cleared errors that had come from the server. The form now clears them on any
 value change, since a server verdict applies to one specific payload.
 
-A third issue was caught by the build rather than the browser: the first version of the migration
+**3. Every write failed with 403 in the containerised stack, while every read worked.**
+
+nginx forwarded `Host $host`, which drops the port, so the back end saw `Host: localhost` while the
+browser sent `Origin: http://localhost:4200`. Spring compared the two, concluded they were different
+origins, treated a same-origin write as a CORS request and answered `403 Invalid CORS request`.
+
+The reason only writes broke is the subtle part: browsers attach `Origin` to every `PUT`, `POST` and
+`DELETE`, including same-origin ones, but not to a plain `GET`. So the grid loaded perfectly and
+saving did not, which is a confusing way to fail. The fix is `proxy_set_header Host $http_host`,
+which preserves the port and makes the request genuinely same-origin from the back end's point of
+view.
+
+**4. The lockfile could not be installed on Linux.**
+
+`npm ci` failed inside the build container with `Missing: @emnapi/core from lock file`. The lockfile
+had been generated on macOS and did not carry the optional dependencies that resolve only on Linux.
+Rather than downgrade the Dockerfile to `npm install` and lose reproducibility, the lockfile was
+regenerated inside a Linux container so it carries both platforms' entries. It was then verified
+that `npm ci`, the test suite and the production build all still work on macOS.
+
+A fifth issue was caught by the build rather than the browser: the first version of the migration
 used lower-cased expression indexes, which H2 does not support. Rather than silently dropping them,
 the limitation and the PostgreSQL follow-up are written into the migration and into
 [section 5.3](#53-database-schema-constraints-and-indexes).
 
+And one by the container runtime: `eclipse-temurin:17-jre-alpine` has no `linux/arm64` build, so the
+image failed to resolve on Apple Silicon. The multi-arch `eclipse-temurin:17-jre` is used instead.
+
 ---
 
-## 11. Deliberate non-goals and what production would need
+## 12. Deliberate non-goals and what production would need
 
 Things consciously left out, with the reasoning, so their absence is read as a decision rather than
 an oversight.
@@ -967,19 +1091,21 @@ an oversight.
 | **Full text search** | Sequential scan is irrelevant at this volume. | Expression indexes and `pg_trgm` on PostgreSQL, then a dedicated search index. Documented in [5.3](#53-database-schema-constraints-and-indexes). |
 | **Caching** | Nothing here is read-heavy enough to justify the invalidation complexity. | Reference data is the obvious first candidate; it changes about never. |
 | **End-to-end browser tests** | Time budget; layered tests give more coverage per minute. | Playwright over the CRUD happy paths in CI. |
-| **Containerising the applications** | The brief asks for a runnable project, and `./mvnw spring-boot:run` plus `npm start` is fewer moving parts to review and keeps restart-on-change. `docker-compose.yml` covers only the Swagger UI tooling, which has no source here. | A multi-stage Dockerfile building the Angular bundle into the Spring Boot jar's static resources, so one artefact serves both and CORS disappears entirely; the back end would then join the compose file. |
+| **A single deployable artefact** | Both applications are containerised (see [section 7](#7-running-the-whole-stack-in-docker)), but as two images behind an nginx proxy rather than one. Two images keep the API independently scalable and the front end cacheable at a CDN. | Either keep the two images and put a real gateway in front, or, if the front end will never be scaled separately, build the Angular bundle into the jar's static resources so one artefact serves both. |
+| **Pushing images to a registry, and orchestration** | Compose is enough to prove the images build and run. Anything beyond that is deployment, not this assessment. | Tag images from CI, push to a registry, and deploy with whatever the platform is. The compose file is a readable statement of what the runtime needs. |
 | **CI pipeline** | Out of scope. | GitHub Actions running both test suites on every push; both are already single commands. |
 
 ---
 
-## 12. Project layout
+## 13. Project layout
 
 ```
 .
 +-- README.md                     this file
 +-- Makefile                      development commands; `make` lists them
-+-- docker-compose.yml            standalone Swagger UI for development
++-- docker-compose.yml            Swagger UI, plus the whole stack under the "app" profile
 +-- backend/
+|   +-- Dockerfile                multi-stage: Maven build -> JRE runtime
 |   +-- mvnw, mvnw.cmd, .mvn/     Maven wrapper (no local Maven needed)
 |   +-- pom.xml
 |   +-- src/main/java/com/xtramile/patient/
@@ -998,6 +1124,8 @@ an oversight.
 |   |   +-- db/seed/              V900 demo fixtures, demo profile only
 |   +-- src/test/                 135 tests + application-test.yml
 +-- frontend/
+    +-- Dockerfile                multi-stage: npm build -> nginx runtime
+    +-- nginx.conf                SPA fallback plus the /api proxy
     +-- package.json, angular.json, proxy.conf.json
     +-- src/app/
         +-- core/                 API client, models, interceptor, date utilities
@@ -1007,7 +1135,7 @@ an oversight.
 
 ---
 
-## 13. Commands reference
+## 14. Commands reference
 
 ### Makefile
 
@@ -1028,6 +1156,10 @@ command, so nothing here is a black box.
 | `make run-jar` | Builds and runs the packaged jar |
 | `make verify` | What CI would run: clean build plus both suites |
 | `make format` / `make format-check` | Prettier, writing or checking |
+| `make stack-up` | Builds and runs the whole app in Docker, for a sanity check |
+| `make stack-down` | Removes every container in the project |
+| `make stack-logs` / `make stack-ps` | Logs and health of the containerised stack |
+| `make stack-rebuild` | Rebuilds the images ignoring the layer cache |
 | `make swagger-up` / `-down` / `-logs` / `-pull` | The Swagger UI container |
 | `make api-docs` | Pretty-prints the OpenAPI document |
 | `make install` | Front end dependencies |
@@ -1081,6 +1213,19 @@ docker compose logs -f        # follow the logs
 docker compose down           # stop and remove
 docker compose pull           # take a newer Swagger UI image
 ```
+
+### Containerised stack
+
+```bash
+docker compose --profile app up -d --build   # build and start everything
+docker compose --profile app ps              # status and health
+docker compose --profile app logs -f backend # one service's logs
+docker compose --profile app down            # remove everything
+docker compose --profile app build --no-cache
+```
+
+Plain `docker compose down` removes only the unprofiled services, so it leaves the app containers
+running. Use the `--profile app` form, or `make stack-down`.
 
 ### Handy API calls
 
