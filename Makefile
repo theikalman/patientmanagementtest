@@ -77,7 +77,7 @@ web: install ## Run the Angular dev server only
 	cd $(FRONTEND) && npm start
 
 .PHONY: stop
-stop: swagger-down ## Stop the API, the web app and the Swagger UI container
+stop: stack-down ## Stop everything: local processes and every container
 	@pkill -f 'spring-boot:run' 2>/dev/null && printf "Stopped the API (spring-boot:run).\n" || true
 	@pkill -f 'patient-service-.*\.jar' 2>/dev/null && printf "Stopped the API (jar).\n" || true
 	@pkill -f 'angular.*ng.*serve' 2>/dev/null && printf "Stopped the web app.\n" || true
@@ -137,6 +137,31 @@ format: install ## Format the front end sources with Prettier
 format-check: install ## Check front end formatting without writing
 	cd $(FRONTEND) && npm run lint:format
 
+##@ Containerised stack (sanity check)
+
+.PHONY: stack-up
+stack-up: ## Build and run the whole app in Docker (API + web + Swagger UI)
+	docker compose --profile app up -d --build
+	@printf "\n$(BOLD)Web$(RESET) $(WEB_URL)   $(BOLD)API$(RESET) $(API_URL)   $(BOLD)Swagger$(RESET) $(SWAGGER_URL)\n"
+	@printf "$(DIM)The web container proxies /api to the API container, so the browser sees one origin.$(RESET)\n"
+	@printf "$(DIM)Stop it with 'make stack-down'. Ports 8080 and 4200 must be free first.$(RESET)\n\n"
+
+.PHONY: stack-down
+stack-down: ## Stop and remove every container in this project
+	@docker compose --profile app down 2>/dev/null || true
+
+.PHONY: stack-logs
+stack-logs: ## Follow the logs of the containerised stack
+	docker compose --profile app logs -f
+
+.PHONY: stack-ps
+stack-ps: ## Show the containerised stack and its health
+	@docker compose --profile app ps
+
+.PHONY: stack-rebuild
+stack-rebuild: ## Rebuild the images from scratch, ignoring the layer cache
+	docker compose --profile app build --no-cache
+
 ##@ Swagger UI (Docker)
 
 .PHONY: swagger-up
@@ -146,6 +171,8 @@ swagger-up: ## Start the Swagger UI container
 
 .PHONY: swagger-down
 swagger-down: ## Stop and remove the Swagger UI container
+	# Plain `down` only touches services with no profile, so the containerised
+	# stack is left alone. `make stack-down` removes everything.
 	@docker compose down 2>/dev/null || true
 
 .PHONY: swagger-logs
