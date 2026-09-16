@@ -23,7 +23,11 @@ describe('errorInterceptor', () => {
   afterEach(() => backend.verify());
 
   /** Runs a request that is guaranteed to fail and hands back the ApiError. */
-  function failWith(body: object | string, status: number, statusText = 'Error'): Promise<ApiError> {
+  function failWith(
+    body: object | string,
+    status: number,
+    statusText = 'Error',
+  ): Promise<ApiError> {
     return new Promise((resolve) => {
       http.get('/api/v1/patients/1').subscribe({ error: (e: ApiError) => resolve(e) });
       backend.expectOne('/api/v1/patients/1').flush(body, { status, statusText });
@@ -49,7 +53,11 @@ describe('errorInterceptor', () => {
         detail: 'The request contains 1 invalid field(s).',
         status: 400,
         errors: [
-          { field: 'address.postcode', message: 'postcode 2000 is not allocated to VIC', rejectedValue: '2000' },
+          {
+            field: 'address.postcode',
+            message: 'postcode 2000 is not allocated to VIC',
+            rejectedValue: '2000',
+          },
         ],
       },
       400,
@@ -62,7 +70,13 @@ describe('errorInterceptor', () => {
 
   it('keeps the version numbers from a conflict so the form can explain itself', async () => {
     const error = await failWith(
-      { title: 'Concurrent modification', detail: 'Changed by someone else', status: 409, expectedVersion: 0, actualVersion: 2 },
+      {
+        title: 'Concurrent modification',
+        detail: 'Changed by someone else',
+        status: 409,
+        expectedVersion: 0,
+        actualVersion: 2,
+      },
       409,
     );
 

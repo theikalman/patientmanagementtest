@@ -55,12 +55,13 @@ describe('PatientList', () => {
   let dialogOpen: ReturnType<typeof vi.fn>;
 
   /** Reaches the protected members the template drives, without weakening them to public. */
-  const component = () => fixture.componentInstance as unknown as {
-    onPageChange(event: { pageIndex: number; pageSize: number }): void;
-    onSortChange(sort: { active: string; direction: 'asc' | 'desc' | '' }): void;
-    confirmDelete(p: Patient): void;
-    loadError(): string | null;
-  };
+  const component = () =>
+    fixture.componentInstance as unknown as {
+      onPageChange(event: { pageIndex: number; pageSize: number }): void;
+      onSortChange(sort: { active: string; direction: 'asc' | 'desc' | '' }): void;
+      confirmDelete(p: Patient): void;
+      loadError(): string | null;
+    };
 
   const lastQuery = (): PatientQuery => listSpy.mock.calls.at(-1)![0];
 
@@ -86,7 +87,13 @@ describe('PatientList', () => {
 
   it('loads the first page on init using the default sort', () => {
     expect(listSpy).toHaveBeenCalledTimes(1);
-    expect(lastQuery()).toEqual({ page: 0, size: 10, sort: 'lastName', direction: 'asc', search: '' });
+    expect(lastQuery()).toEqual({
+      page: 0,
+      size: 10,
+      sort: 'lastName',
+      direction: 'asc',
+      search: '',
+    });
   });
 
   it('renders a row per patient returned by the server', async () => {
@@ -98,7 +105,9 @@ describe('PatientList', () => {
   });
 
   it('shows the total from the server, not the number of rows on screen', async () => {
-    listSpy.mockReturnValue(of(pageOf([patient(1, 'PAT-000001', 'Jane', 'Citizen')], { totalElements: 4212 })));
+    listSpy.mockReturnValue(
+      of(pageOf([patient(1, 'PAT-000001', 'Jane', 'Citizen')], { totalElements: 4212 })),
+    );
     component().onPageChange({ pageIndex: 0, pageSize: 10 });
     await fixture.whenStable();
 
@@ -182,6 +191,8 @@ describe('PatientList', () => {
     component().onPageChange({ pageIndex: 0, pageSize: 10 });
     await fixture.whenStable();
 
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain('There are no patients yet');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'There are no patients yet',
+    );
   });
 });

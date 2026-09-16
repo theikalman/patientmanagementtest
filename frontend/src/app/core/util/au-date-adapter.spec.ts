@@ -32,9 +32,12 @@ describe('AuDateAdapter', () => {
     expect(parts(adapter.parse('1/2/2020'))).toEqual([2020, 2, 1]);
   });
 
-  it.each(['12-04-1985', '12.04.1985', '12/04/1985'])('accepts "%s" as a separator style', (input) => {
-    expect(parts(adapter.parse(input))).toEqual([1985, 4, 12]);
-  });
+  it.each(['12-04-1985', '12.04.1985', '12/04/1985'])(
+    'accepts "%s" as a separator style',
+    (input) => {
+      expect(parts(adapter.parse(input))).toEqual([1985, 4, 12]);
+    },
+  );
 
   it('expands a two digit year to the most recent past century', () => {
     expect(parts(adapter.parse('12/04/85'))).toEqual([1985, 4, 12]);

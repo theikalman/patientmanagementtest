@@ -35,7 +35,8 @@ export interface ConfirmDialogData {
         matButton="filled"
         cdkFocusInitial
         [class.confirm-destructive]="data.destructive"
-        (click)="dialogRef.close(true)">
+        (click)="dialogRef.close(true)"
+      >
         {{ data.confirmLabel ?? 'Confirm' }}
       </button>
     </mat-dialog-actions>

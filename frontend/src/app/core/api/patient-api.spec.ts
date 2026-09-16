@@ -39,9 +39,7 @@ describe('PatientApi', () => {
   it('requests a page with paging and sorting parameters', () => {
     api.list(query).subscribe();
 
-    const req = http.expectOne(
-      (r) => r.url === '/api/v1/patients' && r.params.get('page') === '0',
-    );
+    const req = http.expectOne((r) => r.url === '/api/v1/patients' && r.params.get('page') === '0');
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('size')).toBe('10');
     expect(req.request.params.get('sort')).toBe('lastName,asc');

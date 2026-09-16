@@ -1,11 +1,14 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
-  AbstractControl,
-  FormBuilder,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatDatepickerModule } from '@angular/material/datepicker';
@@ -196,14 +199,19 @@ export class PatientForm {
 
     const existing = this.patient();
     const request = existing
-      ? this.api.update(existing.id, { ...payload, version: existing.version } as UpdatePatientPayload)
+      ? this.api.update(existing.id, {
+          ...payload,
+          version: existing.version,
+        } as UpdatePatientPayload)
       : this.api.create(payload);
 
     request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
         this.saving.set(false);
         this.snackBar.open(
-          existing ? `${saved.fullName} was updated` : `${saved.fullName} was created as ${saved.pid}`,
+          existing
+            ? `${saved.fullName} was updated`
+            : `${saved.fullName} was created as ${saved.pid}`,
           'Dismiss',
           { duration: 4000 },
         );

@@ -15,7 +15,6 @@ import { NativeDateAdapter } from '@angular/material/core';
  */
 @Injectable()
 export class AuDateAdapter extends NativeDateAdapter {
-
   /** d/m/yyyy, d-m-yyyy or d.m.yyyy, with optional leading zeros and a 2 or 4 digit year. */
   private static readonly DAY_FIRST = /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2}|\d{4})$/;
 
