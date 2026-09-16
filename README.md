@@ -128,3 +128,25 @@ curl -X POST http://localhost:8080/api/v1/patients -H 'Content-Type: application
   "gender":"FEMALE","phoneNo":"(02) 9876 5432",
   "address":{"street":"12 Wallaby Way","suburb":"Sydney","state":"NSW","postcode":"2000"}}'
 ```
+
+---
+
+## 7. Notes on the approach
+
+**Two ways to run it.** Locally (`make dev`) for day to day work, where breakpoints and
+restart-on-change work. In Docker (`make stack-up`) for a sanity check: a smoke test, an end to end
+pass, or a last look before opening a pull request.
+
+**Swagger UI is for development, not production.** It is available bundled in the service at
+`/swagger-ui.html` and as a standalone container (`make swagger-up`) that survives back end
+restarts. The `prod` profile switches off both, and the raw OpenAPI document with them, so neither
+can reach production by accident.
+
+**No authentication or authorisation.** Out of scope for the test, and leaving it out keeps the
+project runnable with no setup. For real use it would be the first thing added, and it is additive:
+the API is already versioned and stateless.
+
+**Production preparation is application level only, and minimal.** `application-prod.yml` covers
+what the application itself controls: data source from the environment, no seed data, no database
+console, no interactive docs. Nothing is assumed about the infrastructure, since its shape is not
+known.
