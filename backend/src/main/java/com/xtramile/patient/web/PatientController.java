@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springdoc.core.annotations.ParameterObject;
 import java.net.URI;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -60,7 +61,11 @@ public class PatientController {
     public PageResponse<PatientResponse> list(
             @Parameter(description = "Free text term matched against PID or patient name", example = "jane")
             @RequestParam(required = false) String search,
-            @PageableDefault(size = 10) Pageable pageable) {
+            // @ParameterObject flattens Pageable into page/size/sort query parameters in the
+            // generated OpenAPI document. Without it, Swagger UI renders a single opaque
+            // "pageable" object field and produces a malformed query string that the server
+            // then rejects, which makes "Try it out" unusable for the main list endpoint.
+            @ParameterObject @PageableDefault(size = 10) Pageable pageable) {
         return service.search(search, pageable);
     }
 
