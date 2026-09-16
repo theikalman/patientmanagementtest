@@ -17,13 +17,11 @@ BACKEND  := backend
 FRONTEND := frontend
 MVNW     := ./mvnw
 
-API_PORT     := 8080
-WEB_PORT     := 4200
-SWAGGER_PORT := 8081
+API_PORT := 8080
+WEB_PORT := 4200
 
-API_URL     := http://localhost:$(API_PORT)
-WEB_URL     := http://localhost:$(WEB_PORT)
-SWAGGER_URL := http://localhost:$(SWAGGER_PORT)
+API_URL := http://localhost:$(API_PORT)
+WEB_URL := http://localhost:$(WEB_PORT)
 
 # Quiet Maven down to warnings and test results for the interactive targets;
 # the CI target keeps the full log.
@@ -42,7 +40,7 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} \
 		/^##@/ { printf "\n$(BOLD)%s$(RESET)\n", substr($$0, 5); next } \
 		/^[a-zA-Z_0-9-]+:.*?##/ { printf "  $(CYAN)%-16s$(RESET) %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-	@printf "\n$(DIM)API $(API_URL)  |  Web $(WEB_URL)  |  Swagger $(SWAGGER_URL)$(RESET)\n\n"
+	@printf "\n$(DIM)API $(API_URL)  |  Web $(WEB_URL)  |  Docs $(API_URL)/swagger-ui.html$(RESET)\n\n"
 
 .PHONY: install
 install: $(FRONTEND)/node_modules ## Install front end dependencies
@@ -58,11 +56,9 @@ $(FRONTEND)/node_modules: $(FRONTEND)/package-lock.json
 ##@ Run
 
 .PHONY: dev
-dev: install ## Run the API, the web app and Swagger UI together (Ctrl+C stops all)
-	@$(MAKE) --no-print-directory swagger-up \
-		|| printf "$(DIM)Swagger UI not started (is Docker running?). Continuing without it.$(RESET)\n"
-	@printf "\n$(BOLD)API$(RESET) $(API_URL)   $(BOLD)Web$(RESET) $(WEB_URL)   $(BOLD)Swagger$(RESET) $(SWAGGER_URL)\n"
-	@printf "$(DIM)Ctrl+C stops the API and the web app. Swagger UI keeps running: make swagger-down$(RESET)\n\n"
+dev: install ## Run the API and the web app together (Ctrl+C stops both)
+	@printf "\n$(BOLD)Web$(RESET) $(WEB_URL)   $(BOLD)API$(RESET) $(API_URL)   $(BOLD)Docs$(RESET) $(API_URL)/swagger-ui.html\n"
+	@printf "$(DIM)Ctrl+C stops both.$(RESET)\n\n"
 	@trap 'kill 0' EXIT INT TERM; \
 	 ( cd $(BACKEND) && $(MVNW) $(MVN_QUIET) spring-boot:run ) & \
 	 ( cd $(FRONTEND) && npm start ) & \
@@ -140,48 +136,30 @@ format-check: install ## Check front end formatting without writing
 ##@ Containerised stack (sanity check)
 
 .PHONY: stack-up
-stack-up: ## Build and run the whole app in Docker (API + web + Swagger UI)
-	docker compose --profile app up -d --build
-	@printf "\n$(BOLD)Web$(RESET) $(WEB_URL)   $(BOLD)API$(RESET) $(API_URL)   $(BOLD)Swagger$(RESET) $(SWAGGER_URL)\n"
+stack-up: ## Build and run the whole app in Docker (API + web)
+	docker compose up -d --build
+	@printf "\n$(BOLD)Web$(RESET) $(WEB_URL)   $(BOLD)API$(RESET) $(API_URL)   $(BOLD)Docs$(RESET) $(API_URL)/swagger-ui.html\n"
 	@printf "$(DIM)The web container proxies /api to the API container, so the browser sees one origin.$(RESET)\n"
 	@printf "$(DIM)Stop it with 'make stack-down'. Ports 8080 and 4200 must be free first.$(RESET)\n\n"
 
 .PHONY: stack-down
 stack-down: ## Stop and remove every container in this project
-	@docker compose --profile app down 2>/dev/null || true
+	# --remove-orphans also clears containers from an earlier version of the
+	# compose file, such as the Swagger UI container that used to live here.
+	# Without it a stale container keeps the network alive and `down` half fails.
+	@docker compose down --remove-orphans 2>/dev/null || true
 
 .PHONY: stack-logs
 stack-logs: ## Follow the logs of the containerised stack
-	docker compose --profile app logs -f
+	docker compose logs -f
 
 .PHONY: stack-ps
 stack-ps: ## Show the containerised stack and its health
-	@docker compose --profile app ps
+	@docker compose ps
 
 .PHONY: stack-rebuild
 stack-rebuild: ## Rebuild the images from scratch, ignoring the layer cache
-	docker compose --profile app build --no-cache
-
-##@ Swagger UI (Docker)
-
-.PHONY: swagger-up
-swagger-up: ## Start the Swagger UI container
-	docker compose up -d
-	@printf "Swagger UI on $(SWAGGER_URL) (needs the API running on $(API_PORT)).\n"
-
-.PHONY: swagger-down
-swagger-down: ## Stop and remove the Swagger UI container
-	# Plain `down` only touches services with no profile, so the containerised
-	# stack is left alone. `make stack-down` removes everything.
-	@docker compose down 2>/dev/null || true
-
-.PHONY: swagger-logs
-swagger-logs: ## Follow the Swagger UI container logs
-	docker compose logs -f
-
-.PHONY: swagger-pull
-swagger-pull: ## Pull a newer Swagger UI image
-	docker compose pull
+	docker compose build --no-cache
 
 ##@ Utilities
 
@@ -190,7 +168,6 @@ status: ## Show what is currently running
 	@printf "$(BOLD)%-10s %-26s %s$(RESET)\n" "SERVICE" "URL" "STATUS"
 	@$(call probe,API,$(API_URL),$(API_URL)/actuator/health)
 	@$(call probe,Web,$(WEB_URL),$(WEB_URL))
-	@$(call probe,Swagger,$(SWAGGER_URL),$(SWAGGER_URL))
 
 .PHONY: api-docs
 api-docs: ## Print the OpenAPI document

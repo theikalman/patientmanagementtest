@@ -9,17 +9,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * Cross origin configuration.
  *
- * <p>Two browser origins other than this service need access during development:
- * <ul>
- *   <li>the Angular dev server on :4200, which calls {@code /api/**};</li>
- *   <li>the standalone Swagger UI container on :8081 (see {@code docker-compose.yml}), which
- *       fetches the OpenAPI document and then issues "Try it out" calls against {@code /api/**}.</li>
- * </ul>
+ * <p>Both ways of running the front end proxy {@code /api} to this service, so the browser sees a
+ * single origin and needs no CORS at all. The allow list is a safety net for the cases that are not
+ * proxied: an Angular dev server started without {@code proxy.conf.json}, or a browser based API
+ * tool pointed straight at this port.
  *
- * <p>The OpenAPI document therefore has to be part of the CORS mapping too. Mapping only
- * {@code /api/**} is the mistake that makes a containerised Swagger UI show an empty
- * "Failed to load API definition" with no useful detail, because the browser blocks the fetch
- * before the response is ever read.
+ * <p>The OpenAPI document is mapped as well as the API. Mapping only {@code /api/**} is the easy
+ * mistake: a browser based documentation tool then reports "Failed to load API definition" with no
+ * useful detail, because the fetch is blocked before any response is read.
  *
  * <p>The allowed origins come from configuration rather than being hard coded, so a deployment
  * can point at its real front end host. In production the two applications are normally served

@@ -1,49 +1,38 @@
 # ---------------------------------------------------------------------------
-# Two things live here, and they are used at different times.
+# The whole application, built and run as it would actually be deployed:
 #
-# 1. Day to day (no profile):
+#     docker compose up -d --build        # or: make stack-up
 #
-#        docker compose up -d          # or: make swagger-up
+# The back end as a jar on a JRE, the front end as a static bundle served by
+# nginx, with nginx proxying /api to the back end so the browser sees a single
+# origin. Use it to confirm the thing builds and works outside a developer's
+# machine - a smoke test or a last check before opening a pull request - not as
+# the daily loop. Day to day, run both from source with `make dev`, where
+# restarts and a debugger work.
 #
-#    Starts Swagger UI only. The back end and front end run from source, where
-#    restarts and a debugger work.
-#
-# 2. Sanity check (the "app" profile):
-#
-#        docker compose --profile app up -d --build     # or: make stack-up
-#
-#    Builds and runs the whole application as it would actually be deployed:
-#    the back end as a jar on a JRE, the front end as a static bundle served by
-#    nginx, with nginx proxying /api to the back end so the browser sees a
-#    single origin. Use it to confirm the thing builds and works outside a
-#    developer's machine, not as the daily loop.
-#
-# A service with no `profiles` key always starts, so Swagger UI comes up in both
-# cases and the day to day command is unchanged.
+# Swagger UI is not a service here: the back end serves it itself at
+# /swagger-ui.html, so a separate container would only be a second copy to keep
+# in step.
 # ---------------------------------------------------------------------------
 name: patient-management
 
 services:
 
-  # --- sanity-check stack --------------------------------------------------
-
   backend:
-    profiles: [app]
     build:
       context: ./backend
     image: patient-management/backend:local
     container_name: patient-backend
     ports:
-      # Published so Swagger UI and curl can reach the API directly. The front
-      # end does NOT use this: it proxies over the internal network instead.
+      # Published so curl and any API tool can reach the service directly. The
+      # front end does NOT use this: it proxies over the internal network.
       - "8080:8080"
     environment:
       # Seeded demo data, which is what makes a sanity check worth looking at.
       SPRING_PROFILES_ACTIVE: demo
-      # Only the Swagger UI container needs CORS here. The front end is same
-      # origin thanks to the nginx proxy, so it is deliberately not listed.
-      APP_CORS_ALLOWED_ORIGINS: http://localhost:8081
       JAVA_OPTS: -XX:MaxRAMPercentage=75
+      # No CORS origins are set: the front end reaches the API through the nginx
+      # proxy below, so every browser request is same origin.
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/actuator/health"]
       interval: 10s
@@ -53,7 +42,6 @@ services:
     restart: unless-stopped
 
   frontend:
-    profiles: [app]
     build:
       context: ./frontend
     image: patient-management/frontend:local
@@ -68,53 +56,4 @@ services:
         # "backend" at startup, and a container that is up but still migrating
         # the database would give the first page load a 502.
         condition: service_healthy
-    restart: unless-stopped
-
-  # --- development tooling (always on) -------------------------------------
-
-  swagger-ui:
-    image: swaggerapi/swagger-ui:v5.32.15
-    container_name: patient-swagger-ui
-    ports:
-      # Host 8081 -> nginx 8080 inside the container. 8081 because the back end
-      # already owns 8080 on the host.
-      - "8081:8080"
-    environment:
-      # IMPORTANT: this URL is fetched by the BROWSER, not by this container, so
-      # it must be the address the browser can reach. `localhost:8080` is the
-      # Spring Boot service published on the host, whether that is running from
-      # source or from the backend container above.
-      #
-      # `host.docker.internal:8080` is the usual reflex here and is wrong: the
-      # browser cannot resolve that name, so the document would never load. For
-      # the same reason this cannot use the internal `backend:8080` address.
-      #
-      # Because the page is served from http://localhost:8081 and the document
-      # lives on http://localhost:8080, the fetch is cross origin. The service
-      # allows it via `app.cors.allowed-origins`; if that entry is removed,
-      # Swagger UI shows "Failed to load API definition".
-      URL: http://localhost:8080/v3/api-docs
-
-      # Do not phone home to validator.swagger.io with the spec. It could not
-      # reach a localhost URL anyway, and sending an internal API definition to a
-      # third party is a habit worth not forming.
-      VALIDATOR_URL: "null"
-
-      TRY_IT_OUT_ENABLED: "true"      # "Try it out" armed without an extra click
-      DISPLAY_REQUEST_DURATION: "true"
-      DEEP_LINKING: "true"            # operation anchors survive a page reload
-      FILTER: "true"                  # search box over the operation list
-      DOC_EXPANSION: list             # show operations collapsed, tags expanded
-      PERSIST_AUTHORIZATION: "true"   # ready for when auth is added
-
-    healthcheck:
-      # 127.0.0.1, not localhost: nginx in this image binds IPv4 only (0.0.0.0:8080)
-      # while `localhost` resolves to ::1 first, so the probe would be refused and
-      # the container would sit permanently "unhealthy" even though it serves fine.
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-
     restart: unless-stopped

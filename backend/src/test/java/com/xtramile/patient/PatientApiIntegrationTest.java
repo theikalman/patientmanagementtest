@@ -39,8 +39,8 @@ class PatientApiIntegrationTest {
 
     private static final String BASE = "/api/v1/patients";
 
-    /** Where docker-compose.yml publishes the standalone Swagger UI. */
-    private static final String SWAGGER_UI_ORIGIN = "http://localhost:8081";
+    /** The one origin on the CORS allow list; see app.cors.allowed-origins. */
+    private static final String ALLOWED_ORIGIN = "http://localhost:4200";
 
     private static final String JANE = """
             {
@@ -230,40 +230,29 @@ class PatientApiIntegrationTest {
     }
 
     /**
-     * The document the containerised Swagger UI loads. Publishing it is not enough: because that
-     * page is served from another origin, the browser blocks the fetch unless the document is
-     * inside the CORS mapping as well as the API.
+     * Publishing the OpenAPI document is not enough for a browser based tool on another origin: the
+     * fetch is blocked unless the document is inside the CORS mapping as well as the API.
      */
     @Test
-    @DisplayName("the OpenAPI document is published and readable from the Swagger UI container's origin")
+    @DisplayName("the OpenAPI document is published and readable cross origin")
     void publishesTheOpenApiDocumentCrossOrigin() throws Exception {
-        mockMvc.perform(get("/v3/api-docs").header(HttpHeaders.ORIGIN, SWAGGER_UI_ORIGIN))
+        mockMvc.perform(get("/v3/api-docs").header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, SWAGGER_UI_ORIGIN))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED_ORIGIN))
                 .andExpect(jsonPath("$.openapi").exists())
                 .andExpect(jsonPath("$.info.title").value("Patient Management API"))
                 .andExpect(jsonPath("$.paths['/api/v1/patients']").exists());
     }
 
     @Test
-    @DisplayName("'Try it out' from the Swagger UI container passes preflight")
-    void allowsPreflightFromSwaggerUi() throws Exception {
+    @DisplayName("a write from an allowed origin passes preflight")
+    void allowsPreflightForWrites() throws Exception {
         mockMvc.perform(options(BASE)
-                        .header(HttpHeaders.ORIGIN, SWAGGER_UI_ORIGIN)
+                        .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "content-type"))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, SWAGGER_UI_ORIGIN));
-    }
-
-    @Test
-    @DisplayName("the Angular dev server is still allowed")
-    void allowsPreflightFromAngularDevServer() throws Exception {
-        mockMvc.perform(options(BASE)
-                        .header(HttpHeaders.ORIGIN, "http://localhost:4200")
-                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "PUT"))
-                .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:4200"));
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED_ORIGIN));
     }
 
     /** The point of an allow list is what it keeps out, so assert that too. */

@@ -22,9 +22,9 @@ spring:
 
 app:
   cors:
-    # Mirrors the development origins so the CORS assertions in
+    # Mirrors the development origin so the CORS assertions in
     # PatientApiIntegrationTest exercise the configuration that actually ships.
-    allowed-origins: http://localhost:4200,http://localhost:8081
+    allowed-origins: http://localhost:4200
 
 logging:
   level:
