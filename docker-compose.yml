@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# Development tooling.
+#
+# Runs Swagger UI as a container against the OpenAPI document published by the
+# Spring Boot service, so the API can be browsed and exercised without the
+# Angular app and without the copy of Swagger UI that springdoc bundles into the
+# service itself.
+#
+#   docker compose up -d        then open http://localhost:8081
+#
+# The back end is NOT a service here on purpose: during development it is run
+# from source with `./mvnw spring-boot:run`, which gives restarts and a debugger.
+# Wrapping it in a container would mean rebuilding an image on every change for
+# no benefit. This file only adds the tooling that has no source in this
+# repository.
+# ---------------------------------------------------------------------------
+name: patient-management
+
+services:
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.32.15
+    container_name: patient-swagger-ui
+    ports:
+      # Host 8081 -> nginx 8080 inside the container. 8081 because the back end
+      # already owns 8080 on the host.
+      - "8081:8080"
+    environment:
+      # IMPORTANT: this URL is fetched by the BROWSER, not by this container, so
+      # it must be the address the browser can reach. `localhost:8080` is the
+      # host's Spring Boot service and is correct.
+      #
+      # `host.docker.internal:8080` is the usual reflex here and is wrong: the
+      # browser cannot resolve that name, so the document would never load.
+      #
+      # Because the page is served from http://localhost:8081 and the document
+      # lives on http://localhost:8080, the fetch is cross origin. The service
+      # allows it via `app.cors.allowed-origins` in application.yml; if that
+      # entry is removed, Swagger UI shows "Failed to load API definition".
+      URL: http://localhost:8080/v3/api-docs
+
+      # Do not phone home to validator.swagger.io with the spec. It could not
+      # reach a localhost URL anyway, and sending an internal API definition to a
+      # third party is a habit worth not forming.
+      VALIDATOR_URL: "null"
+
+      TRY_IT_OUT_ENABLED: "true"      # "Try it out" armed without an extra click
+      DISPLAY_REQUEST_DURATION: "true"
+      DEEP_LINKING: "true"            # operation anchors survive a page reload
+      FILTER: "true"                  # search box over the operation list
+      DOC_EXPANSION: list             # show operations collapsed, tags expanded
+      PERSIST_AUTHORIZATION: "true"   # ready for when auth is added
+
+    healthcheck:
+      # 127.0.0.1, not localhost: nginx in this image binds IPv4 only (0.0.0.0:8080)
+      # while `localhost` resolves to ::1 first, so the probe would be refused and
+      # the container would sit permanently "unhealthy" even though it serves fine.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+    restart: unless-stopped
