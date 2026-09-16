@@ -74,9 +74,23 @@ considered and why they were not chosen.
 | Node.js | 24.11 | Angular 21 needs `^20.19 \|\| ^22.12 \|\| >=24`. |
 | Maven | not required | The Maven wrapper (`./mvnw`) downloads it. |
 | Docker | optional | Only for the standalone Swagger UI in `docker-compose.yml`. |
+| GNU Make | optional | For the `Makefile` shortcuts. macOS ships 3.81, which is what it targets. |
 
 No database to install: the application runs on an in-memory H2 database seeded with 42 demo
 patients.
+
+### The short version
+
+A `Makefile` wraps everything below. `make` on its own lists every target.
+
+```bash
+make dev     # API + web app + Swagger UI, Ctrl+C stops the first two
+make test    # both test suites
+make status  # what is currently running
+```
+
+The rest of this section spells out the same commands without `make`, since knowing what they
+actually run matters more than the shortcut.
 
 ### Run the back end
 
@@ -963,6 +977,7 @@ an oversight.
 ```
 .
 +-- README.md                     this file
++-- Makefile                      development commands; `make` lists them
 +-- docker-compose.yml            standalone Swagger UI for development
 +-- backend/
 |   +-- mvnw, mvnw.cmd, .mvn/     Maven wrapper (no local Maven needed)
@@ -993,6 +1008,43 @@ an oversight.
 ---
 
 ## 13. Commands reference
+
+### Makefile
+
+`make` with no arguments prints this list. Every target is a thin wrapper around the underlying
+command, so nothing here is a black box.
+
+| Target | What it does |
+| --- | --- |
+| `make dev` | Starts Swagger UI, then runs the API and the web app together. Ctrl+C stops both. |
+| `make api` / `make web` | Run one side only |
+| `make stop` | Stops the API, the web app and the Swagger UI container |
+| `make status` | Probes all three URLs and reports what is up |
+| `make test` | Both test suites |
+| `make test-api` / `make test-web` | One suite |
+| `make test-one T=PatientServiceTest` | A single back end test class |
+| `make test-watch` | Front end tests in watch mode |
+| `make build` | Jar plus production front end bundle |
+| `make run-jar` | Builds and runs the packaged jar |
+| `make verify` | What CI would run: clean build plus both suites |
+| `make format` / `make format-check` | Prettier, writing or checking |
+| `make swagger-up` / `-down` / `-logs` / `-pull` | The Swagger UI container |
+| `make api-docs` | Pretty-prints the OpenAPI document |
+| `make install` | Front end dependencies |
+| `make clean` / `make clean-all` | Build output, and build output plus `node_modules` |
+
+Two details worth knowing:
+
+- **`make dev` runs both servers in one terminal** under `trap 'kill 0' EXIT INT TERM`, so a single
+  Ctrl+C stops the API and the web app together instead of leaving one orphaned. The Swagger UI
+  container is detached and survives, which is usually what you want; `make swagger-down` stops it.
+  If Docker is not running, `make dev` says so and carries on without Swagger UI rather than
+  failing, because the container is a convenience and not a prerequisite.
+- **`make install` only reruns `npm ci` when the lockfile actually changes.** `node_modules` is a
+  real make target depending on `package-lock.json`, so repeated builds skip it.
+
+The file targets GNU Make 3.81, the version macOS ships, so it avoids `.ONESHELL` (3.82 and later)
+and uses backslash continuations where a recipe needs a single shell.
 
 ### Back end
 
