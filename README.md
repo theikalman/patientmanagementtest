@@ -1,106 +1,68 @@
 # Patient Management Application
 
-**Task #2 (Design and coding test)** of the Xtramile Solutions Java Engineer Test.
+**Task #2 (Design and coding test)** of the Xtramile Solutions Java Engineer Test: a patient CRUD
+application with a grid, search, server side pagination and an Australian address model.
 
-A full stack patient CRUD application with a grid, search, server side pagination and an
-Australian address model.
-
-| | |
-| --- | --- |
-| **Back end** | Java 17, Spring Boot 4.1, Spring Data JPA, Spring REST, Flyway, H2 |
-| **Front end** | Angular 21 (standalone, signals, zoneless) with Angular Material |
-| **Build** | Maven (wrapper committed), npm |
-| **Tests** | 181 automated tests: 135 back end, 46 front end |
-| **Extras** | springdoc OpenAPI, Docker Compose, Makefile |
+**Java 17 / Spring Boot 4.1 / Spring Data JPA / Flyway / H2** back end,
+**Angular 21** (standalone, signals, zoneless) front end with Angular Material,
+built with **Maven** and npm, covered by **181 tests** (135 back end, 46 front end).
 
 ---
 
-## 1. Run it
+## Run it
 
-Needs **JDK 17+** and **Node 20.19+** (24 was used here). No database to install: H2 runs in
-memory, seeded with 42 demo patients, and Maven comes from the committed wrapper.
-
-```bash
-make dev
-```
-
-That runs the API and the web app together (Ctrl+C stops both) and starts Swagger UI if Docker is
-available. Then open **http://localhost:4200**.
-
-Without `make`, in two terminals:
+Needs JDK 17+ and Node 20.19+. No database to install: H2 runs in memory, seeded with 42 patients.
 
 ```bash
-cd backend  && ./mvnw spring-boot:run     # http://localhost:8080
-cd frontend && npm install && npm start   # http://localhost:4200
+make dev        # API + web app together, Ctrl+C stops both
 ```
 
-| URL | What |
-| --- | --- |
-| http://localhost:4200 | The application |
-| http://localhost:8080/api/v1/patients | The API |
-| http://localhost:8080/swagger-ui.html | Interactive API reference |
-| http://localhost:8080/h2-console | Database console (`jdbc:h2:mem:patientdb`, user `sa`, no password) |
-
-### Tests
+Or without `make`, in two terminals:
 
 ```bash
-make test                         # both suites
-
-# or individually
-cd backend  && ./mvnw test        # 135 tests
-cd frontend && npm run test:ci    #  46 tests
+cd backend  && ./mvnw spring-boot:run
+cd frontend && npm install && npm start
 ```
 
-### Everything in Docker
-
-For a sanity check that it builds and runs outside a developer machine:
+- **http://localhost:4200** the application
+- http://localhost:8080/api/v1/patients the API
+- http://localhost:8080/swagger-ui.html interactive API reference
+- http://localhost:8080/h2-console database console (`jdbc:h2:mem:patientdb`, user `sa`, no password)
 
 ```bash
-make stack-up      # or: docker compose --profile app up -d --build
+make test       # both suites; or ./mvnw test and npm run test:ci
+make stack-up   # optional: the whole app built and run in Docker, for a sanity check
 ```
-
-Back end as a jar on a JRE, front end as a static bundle on nginx which proxies `/api` to the API
-container, so the browser sees one origin. `make stack-down` removes it. `docker-compose.yml` and
-the two Dockerfiles carry the reasoning in comments.
 
 ---
 
-## 2. Requirements checklist
+## Requirements checklist
 
-| Requirement from the brief | Where |
+| From the brief | Where |
 | --- | --- |
-| Spring Boot, Spring JPA, Spring REST API | `backend/src/main/java/com/xtramile/patient` |
-| Back end in Java | Java 17 |
-| Front end in Angular | `frontend/src/app`, Angular 21 |
-| Build with Gradle or Maven | Maven, wrapper committed |
-| Unit tests for REST API and Service layers | `PatientControllerTest`, `PatientServiceTest`, plus repository and full stack suites |
-| Other technologies welcome | Flyway, Angular Material, springdoc OpenAPI, Docker Compose, H2, Vitest |
-| Field: PID | `Patient.pid`, server allocated, unique, immutable |
-| Fields: first name, last name | `Patient.firstName` / `lastName` |
-| Field: date of birth | `LocalDate`, must be in the past |
-| Field: gender | `Gender` enum, aligned to HL7 FHIR |
-| Field: phone no | `Patient.phoneNo`, normalised to E.164 |
-| Australian address | `AustralianAddress` embeddable + `AustralianState` enum |
-| Grid of patient data | `PatientList`, Material table |
-| Create / update / delete | `POST` / `PUT` / `DELETE /api/v1/patients`, with `PatientForm` and a confirm dialog |
+| Spring Boot, Spring JPA, Spring REST API, in Java | `backend/src/main/java/com/xtramile/patient` |
+| Angular front end | `frontend/src/app` |
+| Gradle or Maven | Maven, wrapper committed |
+| Unit tests for the REST API and Service layers | `PatientControllerTest`, `PatientServiceTest`, plus repository and full stack suites |
+| PID, name, date of birth, gender, phone | `domain/Patient` - PID is server allocated, immutable and unique; phone normalised to E.164; gender aligned to HL7 FHIR |
+| Australian address | `domain/AustralianAddress` + `AustralianState`, with a postcode validated against its state's ranges |
+| Grid, create, update, delete | `PatientList` and `PatientForm`, over `POST` / `PUT` / `DELETE /api/v1/patients` |
 | Search by PID or name | `?search=` across PID, first name, last name and "first last" |
-| Server side pagination | `?page=&size=&sort=`, paged in the database |
+| Server side pagination | `?page=&size=&sort=`, paged in the database, sort restricted to an allow list |
+| Other technologies welcome | Flyway, springdoc OpenAPI, Docker Compose, Makefile, Vitest |
 
 ---
 
-## 3. Architecture
+## Architecture
 
 ```
-Browser  ->  Angular 21          PatientList / PatientForm
-                |                PatientApi -> HttpClient -> errorInterceptor (-> ApiError)
-                |  /api (same origin: dev-server proxy, or nginx in Docker)
-                v
-             Spring Boot 4       PatientController      thin: bind, validate, status
-                |                GlobalExceptionHandler every error -> RFC 9457
-                |                PatientService         use cases, transactions, rules
-                |                PatientRepository      Spring Data JPA
-                v
-             Hibernate 7 -> H2   schema owned by Flyway
+Angular      PatientList / PatientForm -> PatientApi -> errorInterceptor (-> ApiError)
+   |         /api on the same origin: dev-server proxy, or nginx in Docker
+Spring Boot  PatientController       thin: bind, validate, choose a status
+   |         GlobalExceptionHandler  every error -> RFC 9457 problem document
+   |         PatientService          use cases, transactions, business rules
+   |         PatientRepository       Spring Data JPA
+Hibernate -> H2, schema owned by Flyway (ddl-auto: validate)
 ```
 
 Dependencies point strictly downwards, which is what lets the service be unit tested without a
@@ -108,65 +70,39 @@ servlet container and the controller without a database.
 
 ---
 
-## 4. API
+## API
 
-Base path `/api/v1`. Full reference at `/swagger-ui.html`; raw document at `/v3/api-docs`.
+Base path `/api/v1`. Full reference at `/swagger-ui.html`, raw document at `/v3/api-docs`.
 
-| Method | Path | Purpose | Success | Errors |
-| --- | --- | --- | --- | --- |
-| `GET` | `/patients` | List, search, page, sort | 200 | 400 |
-| `GET` | `/patients/{id}` | One patient by id | 200 | 400, 404 |
-| `GET` | `/patients/by-pid/{pid}` | One patient by business PID | 200 | 404 |
-| `POST` | `/patients` | Create; server allocates the PID | 201 + `Location` | 400 |
-| `PUT` | `/patients/{id}` | Replace; requires `version` | 200 | 400, 404, 409 |
-| `DELETE` | `/patients/{id}` | Delete | 204 | 404 |
-| `GET` | `/reference-data/genders`, `/reference-data/states` | Dropdown values | 200 | |
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/patients` | `page` (0), `size` (10, capped at 100), `sort` (`lastName,asc`), `search` |
+| `GET` | `/patients/{id}`, `/patients/by-pid/{pid}` | |
+| `POST` | `/patients` | 201 + `Location`. No `pid` in the body; the server allocates it |
+| `PUT` | `/patients/{id}` | Requires the `version` last read; a concurrent edit gets 409, not a lost update |
+| `DELETE` | `/patients/{id}` | 204 |
+| `GET` | `/reference-data/genders`, `/reference-data/states` | Dropdown values, so the UI hard codes nothing |
 
-`GET /patients` parameters: `page` (default 0), `size` (default 10, capped at 100),
-`sort` (default `lastName,asc`, allow list only), `search`.
+Errors are RFC 9457 problem documents; validation failures carry a per field `errors` array, which
+is what lets the Angular form put each message under the input that caused it.
 
 ```bash
-curl 'http://localhost:8080/api/v1/patients?search=jane&page=0&size=5'
-
-# Create. Note there is no "pid" field; the server allocates it.
 curl -X POST http://localhost:8080/api/v1/patients -H 'Content-Type: application/json' -d '{
   "firstName":"Jane","lastName":"Citizen","dateOfBirth":"1985-04-12",
   "gender":"FEMALE","phoneNo":"(02) 9876 5432",
   "address":{"street":"12 Wallaby Way","suburb":"Sydney","state":"NSW","postcode":"2000"}}'
 ```
 
-A validation failure returns a problem document naming each rejected field:
-
-```json
-{ "status": 400, "title": "Validation failed",
-  "errors": [
-    { "field": "address.postcode",
-      "message": "postcode 2000 is not allocated to VIC (valid ranges: [3000-3999, 8000-8999])",
-      "rejectedValue": "2000" }
-  ] }
-```
-
 ---
 
-## 5. Commands
+## Commands
 
-`make` with no arguments prints the full list. Every target is a thin wrapper around the real
-command, so nothing is hidden.
+`make` on its own prints every target. The ones worth knowing:
 
-| Target | What it does |
-| --- | --- |
-| `make dev` | API and web app together in one terminal, plus Swagger UI. Ctrl+C stops both servers. |
-| `make api` / `make web` | Run one side only |
-| `make test` / `test-api` / `test-web` | Test suites |
-| `make test-one T=PatientServiceTest` | A single back end test class |
-| `make build` / `make verify` | Build both; or the full clean build plus both suites, as CI would |
-| `make stack-up` / `stack-down` | The containerised stack |
-| `make swagger-up` / `swagger-down` | The Swagger UI container alone |
-| `make status` | Probes all three URLs and reports what is up |
-| `make stop` | Stops every process and container this project starts |
-| `make format` / `format-check` | Prettier |
-| `make clean` / `clean-all` | Build output, and build output plus `node_modules` |
-
-Two behaviours worth knowing: `make dev` runs both servers under `trap 'kill 0'`, so one Ctrl+C
-stops them together instead of orphaning one; and `make install` only reruns `npm ci` when the
-lockfile actually changes. The file targets GNU Make 3.81, the version macOS ships.
+```bash
+make dev        # run the API and the web app
+make test       # both test suites
+make status     # what is currently running
+make stop       # stop every process and container this project starts
+make stack-up   # build and run the whole app in Docker
+```
