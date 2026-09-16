@@ -3,15 +3,44 @@
 **Task #2 (Design and coding test)** of the Xtramile Solutions Java Engineer Test: a patient CRUD
 application with a grid, search, server side pagination and an Australian address model.
 
-**Java 17 / Spring Boot 4.1 / Spring Data JPA / Flyway / H2** back end,
-**Angular 21** (standalone, signals, zoneless) front end with Angular Material,
-built with **Maven** and npm, covered by **181 tests** (135 back end, 46 front end).
+---
+
+## 1. Requirements from the test document
+
+| Requirement | Where it is implemented |
+| --- | --- |
+| Spring Boot, Spring JPA, Spring REST API, in Java | `backend/src/main/java/com/xtramile/patient` |
+| Angular front end | `frontend/src/app` |
+| Build with Gradle or Maven | Maven, wrapper committed (`backend/mvnw`) |
+| Unit tests for the REST API and Service layers | `PatientControllerTest`, `PatientServiceTest`, plus repository and full stack suites |
+| PID, first and last name, date of birth, gender, phone | `domain/Patient` - PID is server allocated, immutable and unique; phone normalised to E.164; gender aligned to HL7 FHIR |
+| Australian address: address, suburb, state, postcode | `domain/AustralianAddress` + `AustralianState`, with the postcode validated against its state's ranges |
+| Grid displaying the patient list | `PatientList`, an Angular Material table |
+| Create, update, delete | `PatientForm` and a confirm dialog, over `POST` / `PUT` / `DELETE /api/v1/patients` |
+| Search by PID or patient name | `?search=` across PID, first name, last name and "first last" |
+| Server side pagination | `?page=&size=&sort=`, paged in the database, sort restricted to an allow list |
+| Other frameworks or technologies welcome | Flyway, springdoc OpenAPI, Docker Compose, Makefile, Vitest |
 
 ---
 
-## Run it
+## 2. Tech stack
 
-Needs JDK 17+ and Node 20.19+. No database to install: H2 runs in memory, seeded with 42 patients.
+| | |
+| --- | --- |
+| **Back end** | Java 17, Spring Boot 4.1, Spring Data JPA, Spring Web MVC, Bean Validation |
+| **Database** | H2 in memory, schema owned by Flyway (`ddl-auto: validate`) |
+| **Front end** | Angular 21 (standalone components, signals, zoneless) with Angular Material |
+| **Build** | Maven (wrapper committed) and npm |
+| **Tests** | JUnit 5, Mockito, AssertJ, MockMvc; Vitest on the front end. 181 in total, 135 back end and 46 front end |
+| **API docs** | springdoc OpenAPI 3.1, Swagger UI |
+| **Tooling** | Makefile, Docker Compose |
+
+---
+
+## 3. Quick start
+
+Needs **JDK 17+** and **Node 20.19+**. No database to install: H2 runs in memory and is seeded
+with 42 demo patients on startup. Maven comes from the committed wrapper.
 
 ```bash
 make dev        # API + web app together, Ctrl+C stops both
@@ -24,36 +53,43 @@ cd backend  && ./mvnw spring-boot:run
 cd frontend && npm install && npm start
 ```
 
-- **http://localhost:4200** the application
-- http://localhost:8080/api/v1/patients the API
-- http://localhost:8080/swagger-ui.html interactive API reference
-- http://localhost:8080/h2-console database console (`jdbc:h2:mem:patientdb`, user `sa`, no password)
+### Links
 
-```bash
-make test       # both suites; or ./mvnw test and npm run test:ci
-make stack-up   # optional: the whole app built and run in Docker, for a sanity check
-```
-
----
-
-## Requirements checklist
-
-| From the brief | Where |
+| URL | What it is |
 | --- | --- |
-| Spring Boot, Spring JPA, Spring REST API, in Java | `backend/src/main/java/com/xtramile/patient` |
-| Angular front end | `frontend/src/app` |
-| Gradle or Maven | Maven, wrapper committed |
-| Unit tests for the REST API and Service layers | `PatientControllerTest`, `PatientServiceTest`, plus repository and full stack suites |
-| PID, name, date of birth, gender, phone | `domain/Patient` - PID is server allocated, immutable and unique; phone normalised to E.164; gender aligned to HL7 FHIR |
-| Australian address | `domain/AustralianAddress` + `AustralianState`, with a postcode validated against its state's ranges |
-| Grid, create, update, delete | `PatientList` and `PatientForm`, over `POST` / `PUT` / `DELETE /api/v1/patients` |
-| Search by PID or name | `?search=` across PID, first name, last name and "first last" |
-| Server side pagination | `?page=&size=&sort=`, paged in the database, sort restricted to an allow list |
-| Other technologies welcome | Flyway, springdoc OpenAPI, Docker Compose, Makefile, Vitest |
+| http://localhost:4200 | **The application.** Angular dev server, proxying `/api` to port 8080 |
+| http://localhost:8080/api/v1/patients | The REST API |
+| http://localhost:8080/swagger-ui.html | Swagger UI, interactive API reference |
+| http://localhost:8080/v3/api-docs | Raw OpenAPI 3.1 document |
+| http://localhost:8080/h2-console | Database console. JDBC URL `jdbc:h2:mem:patientdb`, user `sa`, no password |
+| http://localhost:8080/actuator/health | Health check |
+| http://localhost:8081 | Swagger UI as a container, only when started with Docker (see `make swagger-up`) |
 
 ---
 
-## Architecture
+## 4. Common commands
+
+`make` on its own prints every target. Each one is a thin wrapper around the underlying command.
+
+| Command | What it does |
+| --- | --- |
+| `make dev` | Run the API and the web app together in one terminal |
+| `make api` / `make web` | Run one side only |
+| `make test` | Both test suites |
+| `make test-api` / `make test-web` | One suite (`./mvnw test` / `npm run test:ci`) |
+| `make test-one T=PatientServiceTest` | A single back end test class |
+| `make build` | Package the jar and build the production front end bundle |
+| `make verify` | Clean build plus both suites, as a CI pipeline would run it |
+| `make status` | Probe the URLs above and report what is currently up |
+| `make stop` | Stop every process and container this project starts |
+| `make format` / `make format-check` | Prettier on the front end sources |
+| `make clean` | Remove build output |
+| `make swagger-up` / `make swagger-down` | Swagger UI as a container on port 8081 |
+| `make stack-up` / `make stack-down` | Build and run the whole app in Docker, for a sanity check |
+
+---
+
+## 5. Architecture
 
 ```
 Angular      PatientList / PatientForm -> PatientApi -> errorInterceptor (-> ApiError)
@@ -70,7 +106,7 @@ servlet container and the controller without a database.
 
 ---
 
-## API
+## 6. API
 
 Base path `/api/v1`. Full reference at `/swagger-ui.html`, raw document at `/v3/api-docs`.
 
@@ -91,18 +127,4 @@ curl -X POST http://localhost:8080/api/v1/patients -H 'Content-Type: application
   "firstName":"Jane","lastName":"Citizen","dateOfBirth":"1985-04-12",
   "gender":"FEMALE","phoneNo":"(02) 9876 5432",
   "address":{"street":"12 Wallaby Way","suburb":"Sydney","state":"NSW","postcode":"2000"}}'
-```
-
----
-
-## Commands
-
-`make` on its own prints every target. The ones worth knowing:
-
-```bash
-make dev        # run the API and the web app
-make test       # both test suites
-make status     # what is currently running
-make stop       # stop every process and container this project starts
-make stack-up   # build and run the whole app in Docker
 ```
