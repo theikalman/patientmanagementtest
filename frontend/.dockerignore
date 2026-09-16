@@ -1,0 +1,12 @@
+# node_modules is the big one: copying the host's would both slow the build to a
+# crawl and risk shipping native modules built for the wrong platform. The image
+# installs its own from the lockfile.
+node_modules/
+dist/
+.angular/
+Dockerfile
+.dockerignore
+.gitignore
+.editorconfig
+.vscode/
+*.md
